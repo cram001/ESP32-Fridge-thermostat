@@ -19,3 +19,19 @@ to Signal K.
 
 Before permanent installation, configure sensors by their unique ROM addresses
 so reconnecting or replacing wiring cannot exchange fridge and freezer roles.
+
+## Hardware
+
+From DFRobot:
+1. DF Roboto Firebeetle 2 ESP32-E (N16R2) IoT Board (Dual-Core 240MHz, WiFi/Bluetooth, LVGL Support) 16 MB
+2. Gravity: Digital Buzzer for Arduino / ESP32 / micro:bit / Raspberry Pi
+3. Gravity: MOSFET Power Controller (x2)
+4. Waterproof DS18B20 Digital Temperature Sensor for Arduino (IP68, -10°C to +85°C) (x2)
+5. Gravity: Waterproof DS18B20 Temperature Sensor Kit (x1)
+6. Gravity: 360 Degree Rotary Encoder Module
+7. Terminal Block Board for FireBeetle 2 ESP32-E IoT Microcontroller	DFR0923 (optional, it includes a DC step down converter)
+8. Wires, cables, etc...
+
+From other sources:
+1. HiLetgo 2.42" SSD1309 128x64 OLED Display Module 2.42 Inch (SPI connection)
+2. Enclosure (can be 3D printed) ... see thingaverse 
