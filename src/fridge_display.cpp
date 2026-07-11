@@ -68,6 +68,14 @@ void FridgeDisplay::draw_warning_triangle(int x, int y) {
   oled_.drawPixel(x + 5, y + 8);
 }
 
+void FridgeDisplay::draw_signalk_badge(int x, int y, bool connected) {
+  // A labeled badge is less ambiguous than a generic Wi-Fi icon: Wi-Fi may be
+  // up while the Signal K WebSocket itself is disconnected.
+  oled_.drawFrame(x, y, 17, 10);
+  oled_.drawStr(x + 2, y + 8, "SK");
+  if (!connected) oled_.drawLine(x, y + 9, x + 16, y);
+}
+
 void FridgeDisplay::draw(const DisplayModel& model) {
   // A small repeating offset distributes OLED wear without making the movement
   // visually distracting.
@@ -109,6 +117,7 @@ void FridgeDisplay::draw(const DisplayModel& model) {
                    model.fahrenheit);
   draw_temperature(x, y + 32, "Ambient", model.role_temp_c[2],
                    model.fahrenheit);
+  draw_signalk_badge(x + 96, y + 1, model.signalk_connected);
   char line[24];
   // Animate only enabled outputs, leaving an unambiguous dash when OFF.
   const uint8_t fan_phase = (millis() / 200) % 6;
@@ -164,12 +173,8 @@ void FridgeDisplay::draw(const DisplayModel& model) {
   }
   oled_.drawStr(x, y + 55, line);
   if (model.fault_count > 0) {
-    // Show the actual code even if the encoder itself is the failed device and
-    // the user cannot open the Errors menu.
-    snprintf(line, sizeof(line), "E%02u", model.fault_code);
-    oled_.drawStr(x + 93, y + 10, line);
     // A short, slow flash attracts attention without making the cabin display
-    // visually irritating at night. The error code remains visible throughout.
+    // visually irritating at night. Details remain in the Errors menu.
     if (millis() % 2000UL < 650UL) draw_warning_triangle(x + 116, y + 1);
   }
   oled_.sendBuffer();

@@ -22,6 +22,7 @@ struct DisplayModel {
   uint8_t fault_count;
   uint8_t fault_code;
   const char* fault_message;
+  bool signalk_connected;
 };
 
 class FridgeDisplay {
@@ -38,6 +39,7 @@ class FridgeDisplay {
   void draw_assignment(int x, int y, const DisplayModel& model);
   void draw_fan(int center_x, int center_y, uint8_t phase);
   void draw_warning_triangle(int x, int y);
+  void draw_signalk_badge(int x, int y, bool connected);
 
   U8G2_SSD1309_128X64_NONAME0_F_4W_SW_SPI oled_;
   uint32_t shift_period_ms_;

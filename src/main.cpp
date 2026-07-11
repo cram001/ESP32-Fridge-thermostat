@@ -276,6 +276,8 @@ void update_display() {
   const uint8_t fault_count = faults.count();
   if (fault_count == 0 || selected_error >= fault_count) selected_error = 0;
   const FaultEntry fault = faults.entry(selected_error);
+  const bool signalk_connected =
+      sensesp_app && sensesp_app->get_ws_client()->is_connected();
   DisplayModel model{role_temps,
                      calibration_c,
                      &settings,
@@ -291,7 +293,8 @@ void update_display() {
                      assignment_rom,
                      fault_count,
                      static_cast<uint8_t>(fault.code),
-                     fault.message};
+                     fault.message,
+                     signalk_connected};
   display.draw(model);
 }
 
