@@ -13,6 +13,7 @@ struct DisplayModel {
   bool fahrenheit;
   bool alarm_active;
   bool assignment_mode;
+  bool menu_active;  // true while the user is actively browsing/editing
   uint8_t selected_setting;
   uint8_t assignment_role;
   uint8_t assignment_sensor;
@@ -32,16 +33,33 @@ class FridgeDisplay {
   void begin();
   void set_contrast(uint8_t percent);
   void set_enabled(bool enabled);
+  void draw_splash(const char* version, uint8_t detected_count,
+                   uint8_t seconds_remaining);
   void draw(const DisplayModel& model);
 
  private:
+  struct SettingText {
+    const char* name;
+    char value[20];
+  };
+
   float shown_temperature(float celsius, bool fahrenheit) const;
+  SettingText build_setting_text(const DisplayModel& model) const;
+
+  // Screen states. Exactly one of these (plus the fault triangle overlay)
+  // runs per frame -- see the dispatch in draw().
+  void draw_home(int x, int y, const DisplayModel& model);
+  void draw_alarm(const DisplayModel& model);
+  void draw_menu(int x, int y, const DisplayModel& model);
+  void draw_errors(int x, int y, const DisplayModel& model);
+  void draw_assignment(int x, int y, const DisplayModel& model);
+
   void draw_temperature(int x, int y, const char* label, float value,
                         bool fahrenheit);
-  void draw_assignment(int x, int y, const DisplayModel& model);
+  void draw_hero_temperature(int x, int y, float value, bool fahrenheit);
   void draw_fan(int center_x, int center_y, uint8_t phase);
   void draw_warning_triangle(int x, int y);
-  void draw_signalk_badge(int x, int y, bool connected);
+  void draw_wifi_icon(int x, int y, bool connected);
 
   U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI oled_;
   uint32_t shift_period_ms_;

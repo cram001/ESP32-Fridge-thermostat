@@ -56,6 +56,10 @@ uint32_t last_display_ms = 0;
 uint32_t last_display_activity_ms = 0;
 bool display_awake = true;
 uint8_t applied_oled_contrast_percent = 0;
+uint32_t last_menu_activity_ms = 0;
+constexpr uint32_t kMenuActivityTimeoutMs = 10UL * 1000UL;
+uint32_t splash_started_ms = 0;
+bool splash_active = true;
 
 std::shared_ptr<SKOutput<float>> sk_fridge;
 std::shared_ptr<SKOutput<float>> sk_freezer;
@@ -185,10 +189,14 @@ void update_encoder() {
   if ((delta != 0 || button_down) && !display_awake) {
     display_awake = true;
     last_display_activity_ms = millis();
+    last_menu_activity_ms = 0;
     display.set_enabled(true);
     return;
   }
-  if (delta != 0 || button_down) last_display_activity_ms = millis();
+  if (delta != 0 || button_down) {
+    last_display_activity_ms = millis();
+    if (!alarm_active && !assignment_mode) last_menu_activity_ms = millis();
+  }
   if (delta != 0) {
     // Rotation selects a physical probe during assignment; otherwise it edits
     // whichever normal settings item is currently shown on the OLED.
@@ -312,6 +320,8 @@ void update_display() {
   const FaultEntry fault = faults.entry(selected_error);
   const bool signalk_connected =
       sensesp_app && sensesp_app->get_ws_client()->is_connected();
+  const bool menu_active = last_menu_activity_ms != 0 &&
+      millis() - last_menu_activity_ms < kMenuActivityTimeoutMs;
   DisplayModel model{role_temps,
                      calibration_c,
                      &settings,
@@ -319,6 +329,7 @@ void update_display() {
                      display_fahrenheit,
                      alarm_active,
                      assignment_mode,
+                     menu_active,
                      selected_setting,
                      assignment_role,
                      assignment_sensor,
@@ -387,6 +398,8 @@ void setup() {
 
   setup_signalk();
   sensesp_app->start();
+  splash_started_ms = millis();
+  display.draw_splash(hw::kFirmwareVersion, temperatures.detected_count(), 30);
 }
 
 void loop() {
@@ -394,6 +407,32 @@ void loop() {
   // none of the schedules below intentionally block or use delay().
   event_loop()->tick();
   const uint32_t now = millis();
+  if (splash_active) {
+    const uint32_t elapsed = now - splash_started_ms;
+    if (elapsed < hw::kSplashDurationMs) {
+      if (now - last_display_ms >= hw::kDisplayPeriodMs) {
+        last_display_ms = now;
+        const uint8_t remaining = static_cast<uint8_t>(
+            (hw::kSplashDurationMs - elapsed + 999UL) / 1000UL);
+        display.draw_splash(hw::kFirmwareVersion,
+                            temperatures.detected_count(), remaining);
+      }
+      return;
+    }
+    splash_active = false;
+    if (encoder_available) {
+      last_encoder_position = encoder.getEncoderValue();
+      encoder.detectButtonDown();  // discard presses made during the splash
+    }
+    last_temperature_ms = now;
+    last_control_ms = now;
+    last_display_ms = now;
+    last_display_activity_ms = now;
+    read_temperatures();
+    update_controller();
+    update_display();
+    return;
+  }
   if (now - last_temperature_ms >= hw::kTemperaturePeriodMs) {
     last_temperature_ms = now;
     read_temperatures();

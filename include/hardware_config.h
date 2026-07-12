@@ -35,6 +35,9 @@ constexpr uint32_t kTemperaturePeriodMs = 2000;
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
+constexpr uint32_t kSplashDurationMs = 30UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;
+
+constexpr char kFirmwareVersion[] = "v1.0.0";
 
 }  // namespace hw
