@@ -1,3 +1,6 @@
+// Implements JSON persistence and the SensESP configuration schema.
+// Values loaded from flash are validated defensively because stored files can
+// outlive firmware versions or be edited outside the on-device web interface.
 #include "settings_store.h"
 
 #include "hardware_config.h"
@@ -13,6 +16,8 @@ SettingsStore::SettingsStore(ControllerSettings& settings, bool& fahrenheit,
       vessel_name_(vessel_name) {}
 
 bool SettingsStore::to_json(JsonObject& root) {
+  // Field names are persistent API: changing them requires a migration path
+  // for existing /fridge/settings files.
   root["high_c"] = settings_.high_c;
   root["low_c"] = settings_.low_c;
   root["freezer_lockout_c"] = settings_.freezer_lockout_c;
@@ -37,6 +42,8 @@ bool SettingsStore::to_json(JsonObject& root) {
 }
 
 bool SettingsStore::from_json(const JsonObject& root) {
+  // The `| current_value` form preserves defaults when upgrading from an
+  // older settings file that does not contain a newly introduced field.
   settings_.high_c = constrain(root["high_c"] | settings_.high_c, -39.5f, 30.0f);
   settings_.low_c = constrain(root["low_c"] | settings_.low_c, -40.0f, 30.0f);
   settings_.freezer_lockout_c = constrain(
@@ -88,6 +95,8 @@ bool SettingsStore::from_json(const JsonObject& root) {
 }
 
 const String ConfigSchema(const SettingsStore&) {
+  // This schema drives validation and labels in the SensESP web UI. Runtime
+  // validation above remains necessary for files loaded directly from flash.
   return R"JSON({
     "type":"object",
     "properties":{

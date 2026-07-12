@@ -1,3 +1,6 @@
+// Defines the thermostat's platform-independent fan decision logic.
+// The controller owns hysteresis, start qualification, minimum run times, and
+// freezer lockout; hardware writes and the missing-probe duty cycle live elsewhere.
 #pragma once
 
 #include <Arduino.h>
@@ -20,6 +23,8 @@ struct ControllerSettings {
   uint8_t display_timeout_min = 0;
 };
 
+// Desired output state returned to main.cpp; these are commands, not proof
+// that the physical fans are turning.
 struct ControllerOutput {
   bool spillover = false;
   bool circulation = false;
@@ -70,6 +75,8 @@ class FridgeController {
       spillover_pending_ = false;
     }
 
+    // Circulation has its own state machine because its thresholds and minimum
+    // run timer are independent of the spillover fan.
     if (!fridge_valid) {
       output_.circulation = false;
       circulation_pending_ = false;
@@ -100,6 +107,8 @@ class FridgeController {
   static bool valid(float value) {
     return std::isfinite(value) && value >= -55.0f && value <= 85.0f;
   }
+  // State persists across update() calls so qualification and minimum-on
+  // timers are not reset by the cooperative scheduler.
   ControllerOutput output_;
   bool spillover_pending_ = false;
   bool circulation_pending_ = false;

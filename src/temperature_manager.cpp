@@ -1,3 +1,6 @@
+// Implements asynchronous DS18B20 discovery, conversion, and role mapping.
+// The cooperative poll state machine keeps OneWire conversion latency out of
+// the main loop while retaining a bounded recovery path for bus failures.
 #include "temperature_manager.h"
 
 TemperatureManager::TemperatureManager(uint8_t pin)
@@ -45,7 +48,12 @@ bool TemperatureManager::poll(const String assigned_rom[kRoleCount],
     conversion_state_ = ConversionState::kWaiting;
     return false;
   }
-  if (now - conversion_started_ms_ < kConversionDelayMs) return false;
+  // Read as soon as the sensors report completion. The timeout keeps a
+  // damaged or stuck OneWire bus from permanently blocking future polls.
+  if (!bus_.isConversionComplete() &&
+      now - conversion_started_ms_ < kConversionTimeoutMs) {
+    return false;
+  }
   collect(assigned_rom, calibration_c);
   last_request_ms_ = now;
   conversion_state_ = ConversionState::kIdle;
@@ -54,6 +62,8 @@ bool TemperatureManager::poll(const String assigned_rom[kRoleCount],
 
 void TemperatureManager::collect(const String assigned_rom[kRoleCount],
                                  const float calibration_c[kRoleCount]) {
+  // First cache every physical probe result, then derive logical role values.
+  // This also supplies live readings to the sensor-assignment screen.
   for (uint8_t i = 0; i < detected_count_; ++i) {
     const float value = bus_.getTempC(detected_roms_[i]);
     detected_temp_c_[i] = value == DEVICE_DISCONNECTED_C ? NAN : value;

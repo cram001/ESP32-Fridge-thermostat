@@ -1,3 +1,6 @@
+// Implements all drawing for the 128x64 SSD1309 OLED.
+// Screens consume a DisplayModel snapshot and use full-buffer rendering;
+// temperature unit conversion here is presentation-only.
 #include "fridge_display.h"
 
 namespace {
@@ -205,12 +208,14 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
 
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
-  oled_.drawStr(x + 2, y + 63, "SPILL");
-  if (model.control->spillover) draw_fan(x + 34, y + 58, fan_phase);
-  else oled_.drawStr(x + 31, y + 63, "-");
-  oled_.drawStr(x + 68, y + 63, "CIRC");
-  if (model.control->circulation) draw_fan(x + 96, y + 58, fan_phase);
-  else oled_.drawStr(x + 93, y + 63, "-");
+  // Keep the baseline at 61: the burn-in shift can add 2px, placing the
+  // lowest position at row 63, still inside the 64px canvas.
+  oled_.drawStr(x + 2, y + 61, "SPILL");
+  if (model.control->spillover) draw_fan(x + 34, y + 56, fan_phase);
+  else oled_.drawStr(x + 31, y + 61, "-");
+  oled_.drawStr(x + 68, y + 61, "CIRC");
+  if (model.control->circulation) draw_fan(x + 96, y + 56, fan_phase);
+  else oled_.drawStr(x + 93, y + 61, "-");
 }
 
 void FridgeDisplay::draw_alarm(const DisplayModel& model) {
@@ -253,6 +258,8 @@ void FridgeDisplay::draw_alarm(const DisplayModel& model) {
 
 FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     const DisplayModel& model) const {
+  // selected_setting is shared with main.cpp's encoder editor. Keep this
+  // index-to-label mapping synchronized with that switch and kSettingCount.
   SettingText t{"", ""};
   const char* names[] = {"High", "Low", "Lockout", "Fridge alarm",
                          "Freezer alarm"};

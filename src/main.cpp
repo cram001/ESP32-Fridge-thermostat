@@ -1,3 +1,6 @@
+// Firmware entry point and integration layer for the ESP32 fridge thermostat.
+// It coordinates hardware, SensESP, persistence, alarms, and user interaction
+// using a cooperative loop; specialized policy remains in dedicated classes.
 #include <Arduino.h>
 #include <DFRobot_VisualRotaryEncoder.h>
 #include <Wire.h>
@@ -17,6 +20,9 @@ using namespace sensesp;
 
 namespace {
 
+// --------------------------------------------------------------------------
+// Long-lived application services and shared state
+// --------------------------------------------------------------------------
 // main.cpp coordinates the hardware-facing modules. Sensor discovery,
 // persistence, display rendering, and thermostat decisions live in their own
 // classes so the loop below remains a readable schedule of system activity.
@@ -79,6 +85,9 @@ std::shared_ptr<SKOutput<bool>> sk_lockout;
 std::shared_ptr<SKOutput<bool>> sk_fault;
 std::shared_ptr<SKOutput<bool>> sk_alarm;
 
+// --------------------------------------------------------------------------
+// Hardware and persistence helpers
+// --------------------------------------------------------------------------
 void write_fan(uint8_t pin, bool on) {
   digitalWrite(pin, on == hw::kFanActiveHigh ? HIGH : LOW);
 }
@@ -121,6 +130,8 @@ void read_temperatures() {
   sk_ambient->set(std::isfinite(ambient_c) ? ambient_c + 273.15f : NAN);
 }
 
+// Reconciles the latest sensor sample with faults, thermostat policy, alarm
+// state, fail-safe duty cycling, physical outputs, and Signal K publications.
 void update_controller() {
   // Do not interpret the initial NAN placeholders as a failed fridge probe.
   // Outputs were latched OFF in setup and stay there until the first bus poll.
@@ -212,6 +223,9 @@ void update_controller() {
   sk_alarm->set(alarm_active);
 }
 
+// Converts rotary movement and button presses into menu navigation, setting
+// edits, alarm acknowledgement, and sensor assignment actions. Input guards
+// prevent a failed or noisy encoder from making uncontrolled changes.
 void update_encoder() {
   if (!encoder_available) return;
   const int32_t position = encoder.getEncoderValue();
@@ -384,6 +398,7 @@ void update_encoder() {
   }
 }
 
+// Builds an immutable frame snapshot and manages display sleep/wake behavior.
 void update_display() {
   if (applied_oled_contrast_percent != settings.oled_contrast_percent) {
     display.set_contrast(settings.oled_contrast_percent);
@@ -434,6 +449,8 @@ void update_display() {
   display.draw(model);
 }
 
+// Signal K paths are created once; later updates publish through these shared
+// output objects without rebuilding the networking graph.
 void setup_signalk() {
   sk_fridge = std::make_shared<SKOutput<float>>(
       "environment.inside.refrigerator.temperature", "/Fridge/Temperature");
@@ -455,6 +472,8 @@ void setup_signalk() {
 
 }  // namespace
 
+// Initialize outputs in their safe state before starting buses, persistent
+// configuration, networking, and the startup splash sequence.
 void setup() {
   SetupLogging(ESP_LOG_INFO);
   // Load the inactive level into each output latch before enabling the pin.
@@ -494,6 +513,8 @@ void setup() {
                       temperatures.detected_count(), 30);
 }
 
+// Cooperative scheduler: SensESP gets every tick, while control and display
+// jobs run at their configured periods without delay()-based blocking.
 void loop() {
   // SensESP networking and these three periodic jobs share a cooperative loop;
   // none of the schedules below intentionally block or use delay().

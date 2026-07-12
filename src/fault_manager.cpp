@@ -1,6 +1,11 @@
+// Implements a fixed, allocation-free registry of currently active faults.
+// Stable table order determines both OLED browsing order and displayed error
+// codes, while the bit mask makes frequent condition updates inexpensive.
 #include "fault_manager.h"
 
 namespace {
+// This table is the single mapping from machine-readable codes to operator
+// messages. Keep entries aligned with every value in FaultCode.
 constexpr FaultEntry kFaults[] = {
     {FaultCode::kFridgeMissing, "Fridge sensor missing"},
     {FaultCode::kFridgeRange, "Fridge sensor range"},
@@ -28,6 +33,7 @@ uint8_t FaultManager::count() const {
   return n;
 }
 FaultEntry FaultManager::entry(uint8_t index) const {
+  // The caller indexes only active faults, not the full table.
   for (const auto& fault : kFaults) {
     if (active(fault.code) && index-- == 0) return fault;
   }

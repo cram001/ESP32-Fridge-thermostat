@@ -1,3 +1,6 @@
+// Declares the persistent configuration bridge shared by the rotary UI and
+// SensESP web UI. It serializes controller, display, calibration, and sensor
+// assignment settings while keeping the live objects as the source of truth.
 #pragma once
 
 #include <Arduino.h>

@@ -1,10 +1,13 @@
+// Central hardware map and timing policy for the fridge controller.
+// Keep board pins and system-wide intervals here so electrical or behavioral
+// changes do not require searching through the application logic.
 #pragma once
 
 #include <Arduino.h>
 
 namespace hw {
 
-// DFRobot FireBeetle 2 ESP32-E N16R2 (DFR1139).
+// DFRobot FireBeetle 2 ESP32-E N16R2 (DFR1139): sensors and outputs.
 constexpr uint8_t kOneWirePin = 4;
 constexpr uint8_t kSpilloverFanPin = 13;
 constexpr uint8_t kCirculationFanPin = 17;
@@ -15,6 +18,7 @@ constexpr uint8_t kI2cSdaPin = 21;
 constexpr uint8_t kI2cSclPin = 22;
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
 
+// Safety and fault qualification intervals.
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
 constexpr uint32_t kLongFanRunMs = 60UL * 60UL * 1000UL;
@@ -31,6 +35,9 @@ constexpr uint8_t kOledResetPin = 26;
 constexpr uint16_t kBuzzerFrequencyHz = 2400;
 constexpr uint32_t kAlarmSnoozeMs = 60UL * 60UL * 1000UL;
 
+// Cooperative-loop schedules and user-interface timing.
+// Temperature sampling is intentionally slow to ignore short warm-air events
+// when a refrigerated compartment is opened.
 constexpr uint32_t kTemperaturePeriodMs = 30UL * 1000UL;
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;

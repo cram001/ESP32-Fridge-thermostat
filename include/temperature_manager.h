@@ -1,3 +1,6 @@
+// Declares the non-blocking DS18B20 temperature acquisition service.
+// Sensors are identified by immutable OneWire ROM codes and mapped to the
+// fridge, freezer, and ambient roles with per-role calibration offsets.
 #pragma once
 
 #include <Arduino.h>
@@ -30,9 +33,9 @@ class TemperatureManager {
   String detected_rom(uint8_t sensor) const;
 
  private:
-  // 10-bit resolution converts in ~187.5ms per the DS18B20 datasheet;
-  // rounded up for margin.
-  static constexpr uint32_t kConversionDelayMs = 190;
+  // Prevent a bus fault from leaving the polling state machine waiting
+  // forever. Even a 12-bit DS18B20 conversion normally finishes in 750ms.
+  static constexpr uint32_t kConversionTimeoutMs = 1000;
   enum class ConversionState : uint8_t { kIdle, kWaiting };
 
   static String rom_to_string(const DeviceAddress rom);

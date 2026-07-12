@@ -1,6 +1,10 @@
+// Declares the compact active-fault registry used by alarms and the OLED UI.
+// Faults are transient conditions represented in a bit mask; clearing the
+// underlying condition removes the corresponding entry automatically.
 #pragma once
 #include <Arduino.h>
 
+// Values start at one because each code maps to bit (value - 1).
 enum class FaultCode : uint8_t {
   kFridgeMissing = 1, kFridgeRange, kFreezerMissing, kFreezerRange,
   kAmbientMissing, kAmbientRange, kSignalKOffline, kSpilloverLongRun,
