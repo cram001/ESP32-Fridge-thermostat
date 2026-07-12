@@ -1,7 +1,9 @@
 # ESP32 marine spillover fridge controller
 
+Designed to improve refrigerator temperature consistency in a marine spillover fridge setup, where cold air is pulled from a freezer via  fan. A second fan is used in the refrigerator to maintain a consistent temperature and circulate cold air back to the top when needed.
+
 SensESP firmware for a two-fan marine spillover refrigerator. It reads fridge,
-freezer, and cabin DS18B20 sensors; controls spillover and internal circulation
+freezer, and cabin DS18B20 temp sensors; controls spillover and internal circulation
 fans; displays status on a 128x64 SSD1309 OLED; and publishes readings and state
 to Signal K.
 
@@ -18,7 +20,7 @@ to Signal K.
    rotate in 0.5 C steps.
 
 Before permanent installation, configure sensors by their unique ROM addresses
-so reconnecting or replacing wiring cannot exchange fridge and freezer roles.
+so reconnecting or replacing wiring cannot exchange fridge and freezer roles. Changing a DS18B20 sensor requires a reboot (power cycle). 
 
 ## Hardware
 
