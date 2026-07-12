@@ -1,11 +1,13 @@
 # ESP32 marine spillover fridge controller
 
+SensESP firmware for a two-fan marine spillover refrigerator. 
+
 Designed to improve refrigerator temperature consistency in a marine spillover fridge setup, where cold air is pulled from a freezer via  fan. A second fan is used in the refrigerator to maintain a consistent temperature and circulate cold air back to the top when needed.
 
-SensESP firmware for a two-fan marine spillover refrigerator. It reads fridge,
-freezer, and cabin DS18B20 temp sensors; controls spillover and internal circulation
-fans; displays status on a 128x64 SSD1309 OLED; and publishes readings and state
-to Signal K.
+It reads fridge,freezer, and cabin DS18B20 temp sensors; controls spillover and internal circulation
+fans; displays status on a 128x64 SSD1309 OLED; and publishes readings and state to Signal K (via wifi).
+
+Total daily power consumption, with OLED always ON is less than 1 Ah (12VDC system).
 
 ## Bring-up
 
@@ -35,5 +37,6 @@ From DFRobot:
 8. Wires, cables, etc...
 
 From other sources:
-1. HiLetgo 2.42" SSD1309 128x64 OLED Display Module 2.42 Inch (SPI connection)
-2. 3D printed enclosure  ... see thingaverse  https://www.thingiverse.com/thing:7381757
+1. HiLetgo 2.42" SSD1309 128x64 OLED Display Module 2.42 Inch (SPI connection) (white is prefered for a marine environment)
+2. 3D printed enclosure  ... see thingiverse  https://www.thingiverse.com/thing:7381757
+
