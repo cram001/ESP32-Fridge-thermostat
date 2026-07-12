@@ -1,12 +1,20 @@
 #include "fridge_display.h"
 
-FridgeDisplay::FridgeDisplay(uint8_t clock, uint8_t data, uint8_t cs,
-                             uint8_t dc, uint8_t reset,
+FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
                              uint32_t shift_period_ms)
-    : oled_(U8G2_R0, clock, data, cs, dc, reset),
+    : oled_(U8G2_R0, cs, dc, reset),
       shift_period_ms_(shift_period_ms) {}
 
 void FridgeDisplay::begin() { oled_.begin(); }
+
+void FridgeDisplay::set_contrast(uint8_t percent) {
+  percent = constrain(percent, 10, 100);
+  oled_.setContrast(map(percent, 10, 100, 25, 255));
+}
+
+void FridgeDisplay::set_enabled(bool enabled) {
+  oled_.setPowerSave(enabled ? 0 : 1);
+}
 
 float FridgeDisplay::shown_temperature(float celsius, bool fahrenheit) const {
   // Conversion is presentation-only; control and persisted thresholds stay C.
@@ -168,6 +176,16 @@ void FridgeDisplay::draw(const DisplayModel& model) {
     if (model.fault_count == 0) snprintf(line, sizeof(line), ">Errors: none");
     else snprintf(line, sizeof(line), "E%02u %s", model.fault_code,
                   model.fault_message);
+  } else if (model.selected_setting == 15) {
+    snprintf(line, sizeof(line), ">OLED contrast %u%%",
+             model.settings->oled_contrast_percent);
+  } else if (model.selected_setting == 16) {
+    if (model.settings->display_timeout_min == 0) {
+      snprintf(line, sizeof(line), ">Off timer disabled");
+    } else {
+      snprintf(line, sizeof(line), ">Display off %um",
+               model.settings->display_timeout_min);
+    }
   } else {
     snprintf(line, sizeof(line), ">Assign sensors");
   }

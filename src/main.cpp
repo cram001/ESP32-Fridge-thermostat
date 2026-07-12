@@ -28,8 +28,7 @@ String assigned_rom[3];
 auto settings_store = std::make_shared<SettingsStore>(
     settings, display_fahrenheit, calibration_c, assigned_rom);
 TemperatureManager temperatures(hw::kOneWirePin);
-FridgeDisplay display(hw::kOledClockPin, hw::kOledDataPin, hw::kOledCsPin,
-                      hw::kOledDcPin, hw::kOledResetPin,
+FridgeDisplay display(hw::kOledCsPin, hw::kOledDcPin, hw::kOledResetPin,
                       hw::kPixelShiftPeriodMs);
 
 FridgeController controller;
@@ -54,6 +53,9 @@ uint8_t selected_error = 0;
 uint32_t last_temperature_ms = 0;
 uint32_t last_control_ms = 0;
 uint32_t last_display_ms = 0;
+uint32_t last_display_activity_ms = 0;
+bool display_awake = true;
+uint8_t applied_oled_contrast_percent = 0;
 
 std::shared_ptr<SKOutput<float>> sk_fridge;
 std::shared_ptr<SKOutput<float>> sk_freezer;
@@ -179,6 +181,14 @@ void update_encoder() {
   if (delta > 512) delta -= 1024;
   if (delta < -512) delta += 1024;
   last_encoder_position = position;
+  const bool button_down = encoder.detectButtonDown();
+  if ((delta != 0 || button_down) && !display_awake) {
+    display_awake = true;
+    last_display_activity_ms = millis();
+    display.set_enabled(true);
+    return;
+  }
+  if (delta != 0 || button_down) last_display_activity_ms = millis();
   if (delta != 0) {
     // Rotation selects a physical probe during assignment; otherwise it edits
     // whichever normal settings item is currently shown on the OLED.
@@ -226,13 +236,26 @@ void update_encoder() {
     } else if (selected_setting == 14 && faults.count() > 0) {
       selected_error = (selected_error + delta + faults.count() * 8) %
                        faults.count();
+    } else if (selected_setting == 15) {
+      settings.oled_contrast_percent = constrain(
+          static_cast<int>(settings.oled_contrast_percent) + delta * 10,
+          10, 100);
+      display.set_contrast(settings.oled_contrast_percent);
+    } else if (selected_setting == 16) {
+      const uint8_t options[] = {0, 1, 5, 20, 30, 60};
+      uint8_t option = 0;
+      while (option < 5 &&
+             options[option] != settings.display_timeout_min) option++;
+      int32_t next_option = (static_cast<int32_t>(option) + delta) % 6;
+      if (next_option < 0) next_option += 6;
+      settings.display_timeout_min = options[next_option];
     }
     // Keep the two fridge thresholds in a meaningful order.
     settings.low_c = min(settings.low_c, settings.high_c - hw::kHysteresisC);
     settings.high_c = max(settings.high_c, settings.low_c + hw::kHysteresisC);
     save_settings();
   }
-  if (encoder.detectButtonDown()) {
+  if (button_down) {
     // Alarm acknowledgement has priority over all menu button actions.
     if (alarm_active) {
       alarm_snooze_until_ms = millis() + hw::kAlarmSnoozeMs;
@@ -254,17 +277,28 @@ void update_encoder() {
         assignment_role = 0;
         selected_setting = 0;
       }
-    } else if (selected_setting == 15) {
+    } else if (selected_setting == 17) {
       assignment_mode = true;
       assignment_role = 0;
       assignment_sensor = 0;
     } else {
-      selected_setting = (selected_setting + 1) % 16;
+      selected_setting = (selected_setting + 1) % 18;
     }
   }
 }
 
 void update_display() {
+  if (applied_oled_contrast_percent != settings.oled_contrast_percent) {
+    display.set_contrast(settings.oled_contrast_percent);
+    applied_oled_contrast_percent = settings.oled_contrast_percent;
+  }
+  if (display_awake && settings.display_timeout_min != 0 &&
+      millis() - last_display_activity_ms >=
+          static_cast<uint32_t>(settings.display_timeout_min) * 60UL * 1000UL) {
+    display_awake = false;
+    display.set_enabled(false);
+  }
+  if (!display_awake) return;
   // Build a read-only snapshot so the display module does not depend on or
   // mutate controller globals.
   const float role_temps[] = {fridge_c, freezer_c, ambient_c};
@@ -346,6 +380,9 @@ void setup() {
     last_encoder_position = encoder.getEncoderValue();
   }
   display.begin();
+  display.set_contrast(settings.oled_contrast_percent);
+  applied_oled_contrast_percent = settings.oled_contrast_percent;
+  last_display_activity_ms = millis();
   if (temperatures.begin(assigned_rom)) save_settings();
 
   setup_signalk();

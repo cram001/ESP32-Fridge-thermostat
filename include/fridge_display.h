@@ -27,9 +27,11 @@ struct DisplayModel {
 
 class FridgeDisplay {
  public:
-  FridgeDisplay(uint8_t clock, uint8_t data, uint8_t cs, uint8_t dc,
-                uint8_t reset, uint32_t shift_period_ms);
+  FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
+                uint32_t shift_period_ms);
   void begin();
+  void set_contrast(uint8_t percent);
+  void set_enabled(bool enabled);
   void draw(const DisplayModel& model);
 
  private:
@@ -41,7 +43,7 @@ class FridgeDisplay {
   void draw_warning_triangle(int x, int y);
   void draw_signalk_badge(int x, int y, bool connected);
 
-  U8G2_SSD1309_128X64_NONAME0_F_4W_SW_SPI oled_;
+  U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI oled_;
   uint32_t shift_period_ms_;
   uint32_t last_shift_ms_ = 0;
   uint8_t shift_index_ = 0;

@@ -19,6 +19,8 @@ bool SettingsStore::to_json(JsonObject& root) {
   root["circulation_min_on_min"] = settings_.circulation_min_on_min;
   root["failsafe_off_min"] = settings_.failsafe_off_min;
   root["buzzer_enabled"] = settings_.buzzer_enabled;
+  root["oled_contrast_percent"] = settings_.oled_contrast_percent;
+  root["display_timeout_min"] = settings_.display_timeout_min;
   root["fahrenheit"] = fahrenheit_;
   root["fridge_calibration_c"] = calibration_c_[0];
   root["freezer_calibration_c"] = calibration_c_[1];
@@ -50,6 +52,16 @@ bool SettingsStore::from_json(const JsonObject& root) {
       fail_off == 5 || fail_off == 10 || fail_off == 15 || fail_off == 20
           ? fail_off : 15;
   settings_.buzzer_enabled = root["buzzer_enabled"] | settings_.buzzer_enabled;
+  settings_.oled_contrast_percent = constrain(
+      root["oled_contrast_percent"] | settings_.oled_contrast_percent, 10, 100);
+  const uint8_t display_timeout =
+      root["display_timeout_min"] | settings_.display_timeout_min;
+  settings_.display_timeout_min =
+      display_timeout == 0 || display_timeout == 1 || display_timeout == 5 ||
+              display_timeout == 20 || display_timeout == 30 ||
+              display_timeout == 60
+          ? display_timeout
+          : 0;
   fahrenheit_ = root["fahrenheit"] | fahrenheit_;
   calibration_c_[0] = constrain(
       root["fridge_calibration_c"] | calibration_c_[0], -5.0f, 5.0f);
@@ -80,6 +92,8 @@ const String ConfigSchema(const SettingsStore&) {
       "circulation_min_on_min":{"title":"Circulation minimum ON (minutes)","type":"integer","minimum":1,"maximum":5},
       "failsafe_off_min":{"title":"Fridge sensor fail-safe OFF time (minutes)","type":"integer","enum":[5,10,15,20]},
       "buzzer_enabled":{"title":"Buzzer enabled","type":"boolean"},
+      "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","minimum":10,"maximum":100,"multipleOf":10},
+      "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":[0,1,5,20,30,60]},
       "fahrenheit":{"title":"Display temperatures in Fahrenheit","type":"boolean"},
       "fridge_calibration_c":{"title":"Fridge calibration offset (C)","type":"number","minimum":-5,"maximum":5,"multipleOf":0.1},
       "freezer_calibration_c":{"title":"Freezer calibration offset (C)","type":"number","minimum":-5,"maximum":5,"multipleOf":0.1},

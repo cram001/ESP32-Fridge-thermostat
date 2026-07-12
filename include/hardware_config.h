@@ -19,7 +19,9 @@ constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
 constexpr uint32_t kLongFanRunMs = 60UL * 60UL * 1000UL;
 
-// SSD1309 128x64, 4-wire SPI on the FireBeetle GDI connector.
+// SSD1309 128x64 OLED, 4-wire SPI. The display manual labels SPI
+// clock/data as D0/SCK and D1/SDA; these map to the ESP32 VSPI SCK/MOSI
+// pins used by U8g2 hardware SPI.
 constexpr uint8_t kOledClockPin = 18;
 constexpr uint8_t kOledDataPin = 23;
 constexpr uint8_t kOledCsPin = 14;

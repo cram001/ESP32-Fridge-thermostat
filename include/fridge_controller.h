@@ -16,6 +16,8 @@ struct ControllerSettings {
   uint8_t circulation_min_on_min = 2;
   uint8_t failsafe_off_min = 15;
   bool buzzer_enabled = true;
+  uint8_t oled_contrast_percent = 50;
+  uint8_t display_timeout_min = 0;
 };
 
 struct ControllerOutput {
