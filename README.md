@@ -40,3 +40,10 @@ From other sources:
 1. HiLetgo 2.42" SSD1309 128x64 OLED Display Module 2.42 Inch (SPI connection) (white is prefered for a marine environment)
 2. 3D printed enclosure  ... see thingiverse  https://www.thingiverse.com/thing:7381757
 
+## Future implementations:
+1. Optional PWM fan (instead of on/off fan) .... would allow to implement PID control and vary fan speed based on temperature delta from desired and based on freezer temp (reduce freezer warming effect when freezer temp is close to high limit)
+2. Humidity sensor to help minimize evaporator icing up and recommened defrost cycles
+3. Ambient light sensor to automatically reduce display brightness
+4. Door open sensor - linked to alarm state in case it's left open or not fully latched closed
+5. 
+   
