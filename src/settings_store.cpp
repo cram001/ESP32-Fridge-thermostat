@@ -1,12 +1,14 @@
 #include "settings_store.h"
 
 SettingsStore::SettingsStore(ControllerSettings& settings, bool& fahrenheit,
-                             float calibration_c[3], String assigned_rom[3])
+                             float calibration_c[3], String assigned_rom[3],
+                             String& vessel_name)
     : FileSystemSaveable("/fridge/settings"),
       settings_(settings),
       fahrenheit_(fahrenheit),
       calibration_c_(calibration_c),
-      assigned_rom_(assigned_rom) {}
+      assigned_rom_(assigned_rom),
+      vessel_name_(vessel_name) {}
 
 bool SettingsStore::to_json(JsonObject& root) {
   root["high_c"] = settings_.high_c;
@@ -28,6 +30,7 @@ bool SettingsStore::to_json(JsonObject& root) {
   root["fridge_rom"] = assigned_rom_[0];
   root["freezer_rom"] = assigned_rom_[1];
   root["ambient_rom"] = assigned_rom_[2];
+  root["vessel_name"] = vessel_name_;
   return true;
 }
 
@@ -72,6 +75,9 @@ bool SettingsStore::from_json(const JsonObject& root) {
   assigned_rom_[0] = root["fridge_rom"] | assigned_rom_[0];
   assigned_rom_[1] = root["freezer_rom"] | assigned_rom_[1];
   assigned_rom_[2] = root["ambient_rom"] | assigned_rom_[2];
+  vessel_name_ = root["vessel_name"] | vessel_name_;
+  vessel_name_.trim();
+  if (vessel_name_.length() > 24) vessel_name_.remove(24);
 
   // Never allow the low threshold to overlap the high threshold.
   settings_.low_c = constrain(settings_.low_c, -40.0f,
@@ -101,7 +107,8 @@ const String ConfigSchema(const SettingsStore&) {
       "ambient_calibration_c":{"title":"Ambient calibration offset (C)","type":"number","minimum":-5,"maximum":5,"multipleOf":0.1},
       "fridge_rom":{"title":"Fridge sensor ROM (16 hex characters)","type":"string","pattern":"^(|[0-9A-Fa-f]{16})$"},
       "freezer_rom":{"title":"Freezer sensor ROM (16 hex characters)","type":"string","pattern":"^(|[0-9A-Fa-f]{16})$"},
-      "ambient_rom":{"title":"Ambient sensor ROM (16 hex characters)","type":"string","pattern":"^(|[0-9A-Fa-f]{16})$"}
+      "ambient_rom":{"title":"Ambient sensor ROM (16 hex characters)","type":"string","pattern":"^(|[0-9A-Fa-f]{16})$"},
+      "vessel_name":{"title":"Vessel name (optional)","type":"string","maxLength":24}
     }
   })JSON";
 }

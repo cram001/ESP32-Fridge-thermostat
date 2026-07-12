@@ -20,7 +20,8 @@ void FridgeDisplay::set_enabled(bool enabled) {
   oled_.setPowerSave(enabled ? 0 : 1);
 }
 
-void FridgeDisplay::draw_splash(const char* version, uint8_t detected_count,
+void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
+                                uint8_t detected_count,
                                 uint8_t seconds_remaining) {
   oled_.clearBuffer();
 
@@ -40,8 +41,15 @@ void FridgeDisplay::draw_splash(const char* version, uint8_t detected_count,
   oled_.drawLine(67, 56, 79, 54);
   oled_.drawLine(79, 54, 96, 56);
 
+  char title[25];
+  snprintf(title, sizeof(title), "%s",
+           vessel_name && vessel_name[0] ? vessel_name : "FRIDGE CTRL");
   oled_.setFont(u8g2_font_helvB10_tf);
-  oled_.drawStr(2, 12, "CORISSA");
+  if (oled_.getStrWidth(title) > 88) oled_.setFont(u8g2_font_helvB08_tf);
+  while (title[0] && oled_.getStrWidth(title) > 88) {
+    title[strlen(title) - 1] = '\0';
+  }
+  oled_.drawStr(2, 12, title);
   oled_.setFont(u8g2_font_5x7_tf);
   const int version_width = oled_.getStrWidth(version);
   oled_.drawStr(127 - version_width, 7, version);

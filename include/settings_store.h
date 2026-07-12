@@ -11,7 +11,8 @@
 class SettingsStore : public sensesp::FileSystemSaveable {
  public:
   SettingsStore(ControllerSettings& settings, bool& fahrenheit,
-                float calibration_c[3], String assigned_rom[3]);
+                float calibration_c[3], String assigned_rom[3],
+                String& vessel_name);
 
   bool to_json(JsonObject& root) override;
   bool from_json(const JsonObject& root) override;
@@ -21,7 +22,7 @@ class SettingsStore : public sensesp::FileSystemSaveable {
   bool& fahrenheit_;
   float* calibration_c_;
   String* assigned_rom_;
+  String& vessel_name_;
 };
 
 const String ConfigSchema(const SettingsStore& store);
-

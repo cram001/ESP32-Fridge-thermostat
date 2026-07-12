@@ -25,8 +25,9 @@ ControllerSettings settings;
 float calibration_c[3] = {0.0f, 0.0f, 0.0f};
 bool display_fahrenheit = false;
 String assigned_rom[3];
+String vessel_name = "FRIDGE CTRL";
 auto settings_store = std::make_shared<SettingsStore>(
-    settings, display_fahrenheit, calibration_c, assigned_rom);
+    settings, display_fahrenheit, calibration_c, assigned_rom, vessel_name);
 TemperatureManager temperatures(hw::kOneWirePin);
 FridgeDisplay display(hw::kOledCsPin, hw::kOledDcPin, hw::kOledResetPin,
                       hw::kPixelShiftPeriodMs);
@@ -486,7 +487,8 @@ void setup() {
   setup_signalk();
   sensesp_app->start();
   splash_started_ms = millis();
-  display.draw_splash(hw::kFirmwareVersion, temperatures.detected_count(), 30);
+  display.draw_splash(vessel_name.c_str(), hw::kFirmwareVersion,
+                      temperatures.detected_count(), 30);
 }
 
 void loop() {
@@ -501,7 +503,7 @@ void loop() {
         last_display_ms = now;
         const uint8_t remaining = static_cast<uint8_t>(
             (hw::kSplashDurationMs - elapsed + 999UL) / 1000UL);
-        display.draw_splash(hw::kFirmwareVersion,
+        display.draw_splash(vessel_name.c_str(), hw::kFirmwareVersion,
                             temperatures.detected_count(), remaining);
       }
       return;
