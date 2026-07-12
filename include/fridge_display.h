@@ -12,6 +12,7 @@ struct DisplayModel {
   const ControllerOutput* control;
   bool fahrenheit;
   bool alarm_active;
+  bool critical_probe_alarm;
   bool assignment_mode;
   bool menu_active;  // true while the user is actively browsing/editing
   uint8_t selected_setting;

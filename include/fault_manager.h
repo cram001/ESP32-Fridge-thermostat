@@ -4,7 +4,7 @@
 enum class FaultCode : uint8_t {
   kFridgeMissing = 1, kFridgeRange, kFreezerMissing, kFreezerRange,
   kAmbientMissing, kAmbientRange, kSignalKOffline, kSpilloverLongRun,
-  kEncoderOffline
+  kEncoderOffline, kEncoderErratic
 };
 
 struct FaultEntry { FaultCode code; const char* message; };

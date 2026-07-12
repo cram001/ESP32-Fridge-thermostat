@@ -215,6 +215,18 @@ void FridgeDisplay::draw_alarm(const DisplayModel& model) {
   oled_.setFont(u8g2_font_helvB10_tf);
   oled_.drawStr(30, 18, "ALARM");
 
+  if (model.critical_probe_alarm) {
+    oled_.setFont(u8g2_font_helvB08_tf);
+    oled_.drawStr(19, 36, "SENSOR FAULT");
+    const char* message = !std::isfinite(model.role_temp_c[0])
+                              ? "CHECK FRIDGE PROBE"
+                              : "CHECK FREEZER PROBE";
+    const int message_width = oled_.getStrWidth(message);
+    oled_.drawStr((128 - message_width) / 2, 52, message);
+    oled_.setDrawColor(1);
+    return;
+  }
+
   const bool fridge_tripped =
       std::isfinite(model.role_temp_c[0]) &&
       model.role_temp_c[0] >= model.settings->fridge_alarm_c;

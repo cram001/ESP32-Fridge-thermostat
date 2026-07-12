@@ -11,6 +11,7 @@ constexpr FaultEntry kFaults[] = {
     {FaultCode::kSignalKOffline, "Signal K offline"},
     {FaultCode::kSpilloverLongRun, "Spill fan over 60m"},
     {FaultCode::kEncoderOffline, "Encoder offline"},
+    {FaultCode::kEncoderErratic, "Encoder input erratic"},
 };
 }
 

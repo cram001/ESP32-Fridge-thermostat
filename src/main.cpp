@@ -45,6 +45,8 @@ bool encoder_available = false;
 int32_t last_encoder_position = 0;
 uint8_t selected_setting = 0;
 bool alarm_active = false;
+bool alarm_condition_present = false;
+bool critical_probe_alarm = false;
 bool temperature_alarm_armed = false;
 uint32_t alarm_snooze_until_ms = 0;
 uint32_t fridge_failure_started_ms = 0;
@@ -60,6 +62,13 @@ uint32_t last_menu_activity_ms = 0;
 constexpr uint32_t kMenuActivityTimeoutMs = 10UL * 1000UL;
 uint32_t splash_started_ms = 0;
 bool splash_active = true;
+bool settings_dirty = false;
+uint32_t settings_changed_ms = 0;
+bool encoder_input_locked = false;
+uint32_t encoder_activity_started_ms = 0;
+uint32_t encoder_quiet_started_ms = 0;
+uint32_t last_button_event_ms = 0;
+bool encoder_button_ready = true;
 
 std::shared_ptr<SKOutput<float>> sk_fridge;
 std::shared_ptr<SKOutput<float>> sk_freezer;
@@ -80,6 +89,19 @@ void load_settings() {
 
 void save_settings() {
   settings_store->save();
+  settings_dirty = false;
+}
+
+void mark_settings_dirty() {
+  settings_dirty = true;
+  settings_changed_ms = millis();
+}
+
+void save_settings_when_idle() {
+  if (settings_dirty &&
+      millis() - settings_changed_ms >= hw::kSettingsSaveDelayMs) {
+    save_settings();
+  }
 }
 
 void read_temperatures() {
@@ -111,6 +133,7 @@ void update_controller() {
   faults.set(FaultCode::kAmbientMissing, ambient_status == Status::kMissing);
   faults.set(FaultCode::kAmbientRange, ambient_status == Status::kOutOfRange);
   faults.set(FaultCode::kEncoderOffline, !encoder_available);
+  faults.set(FaultCode::kEncoderErratic, encoder_input_locked);
   const bool sk_offline = now >= hw::kSignalKFaultGraceMs &&
       (!sensesp_app || !sensesp_app->get_ws_client()->is_connected());
   faults.set(FaultCode::kSignalKOffline, sk_offline);
@@ -155,11 +178,14 @@ void update_controller() {
   if (reached_safe_temperature || now >= hw::kStartupAlarmGraceMs) {
     temperature_alarm_armed = true;
   }
-  const bool alarm_condition = temperature_alarm_armed &&
-      (std::isfinite(fridge_c) && fridge_c >= settings.fridge_alarm_c) ||
-      (temperature_alarm_armed && std::isfinite(freezer_c) &&
-       freezer_c >= settings.freezer_alarm_c);
-  if (!alarm_condition) {
+  const bool temperature_alarm_condition = temperature_alarm_armed &&
+      ((std::isfinite(fridge_c) && fridge_c >= settings.fridge_alarm_c) ||
+       (std::isfinite(freezer_c) && freezer_c >= settings.freezer_alarm_c));
+  critical_probe_alarm = fridge_status != Status::kOk ||
+                         freezer_status != Status::kOk;
+  alarm_condition_present = temperature_alarm_condition ||
+                            critical_probe_alarm;
+  if (!alarm_condition_present) {
     // Clearing the fault also clears any remaining snooze time. A later,
     // genuinely new high-temperature event must alarm immediately.
     alarm_snooze_until_ms = 0;
@@ -169,6 +195,11 @@ void update_controller() {
     const bool snoozed = alarm_snooze_until_ms != 0 &&
         static_cast<int32_t>(millis() - alarm_snooze_until_ms) < 0;
     alarm_active = !snoozed;
+  }
+  if (alarm_condition_present) {
+    display_awake = true;
+    last_display_activity_ms = now;
+    display.set_enabled(true);
   }
   if (alarm_active && settings.buzzer_enabled) {
     tone(hw::kBuzzerPin, hw::kBuzzerFrequencyHz);
@@ -185,7 +216,50 @@ void update_encoder() {
   if (delta > 512) delta -= 1024;
   if (delta < -512) delta += 1024;
   last_encoder_position = position;
-  const bool button_down = encoder.detectButtonDown();
+  const bool raw_button_down = encoder.detectButtonDown();
+  const uint32_t now = millis();
+  const bool raw_activity = delta != 0 || raw_button_down;
+
+  // Contain corrupted I2C readings or a module that continuously generates
+  // input. Normal operation resumes after two quiet seconds.
+  if (encoder_input_locked) {
+    if (raw_activity) {
+      encoder_quiet_started_ms = 0;
+    } else if (encoder_quiet_started_ms == 0) {
+      encoder_quiet_started_ms = now;
+    } else if (now - encoder_quiet_started_ms >=
+               hw::kEncoderRecoveryQuietMs) {
+      encoder_input_locked = false;
+      encoder_activity_started_ms = 0;
+      encoder_quiet_started_ms = 0;
+    }
+    return;
+  }
+  if (abs(delta) > hw::kEncoderMaxDeltaPerPoll) {
+    encoder_input_locked = true;
+    encoder_quiet_started_ms = 0;
+    return;
+  }
+  if (raw_activity) {
+    if (encoder_activity_started_ms == 0) encoder_activity_started_ms = now;
+    if (now - encoder_activity_started_ms >=
+        hw::kEncoderContinuousLimitMs) {
+      encoder_input_locked = true;
+      encoder_quiet_started_ms = 0;
+      return;
+    }
+  } else {
+    encoder_activity_started_ms = 0;
+  }
+
+  if (!raw_button_down) encoder_button_ready = true;
+  const bool button_down = raw_button_down && encoder_button_ready &&
+      (last_button_event_ms == 0 ||
+       now - last_button_event_ms >= hw::kEncoderButtonGuardMs);
+  if (button_down) {
+    last_button_event_ms = now;
+    encoder_button_ready = false;
+  }
   if ((delta != 0 || button_down) && !display_awake) {
     display_awake = true;
     last_display_activity_ms = millis();
@@ -205,13 +279,23 @@ void update_encoder() {
           (assignment_sensor + delta + temperatures.detected_count() * 8) %
           temperatures.detected_count();
     } else if (selected_setting <= 4) {
-      float* value = selected_setting == 0 ? &settings.high_c
-                     : selected_setting == 1 ? &settings.low_c
-                     : selected_setting == 2 ? &settings.freezer_lockout_c
-                     : selected_setting == 3 ? &settings.fridge_alarm_c
-                                             : &settings.freezer_alarm_c;
       const float step_c = display_fahrenheit ? (0.5f / 1.8f) : 0.5f;
-      *value = constrain(*value + delta * step_c, -40.0f, 30.0f);
+      if (selected_setting == 0) {
+        settings.high_c = constrain(settings.high_c + delta * step_c,
+                                    settings.low_c + hw::kHysteresisC, 30.0f);
+      } else if (selected_setting == 1) {
+        settings.low_c = constrain(settings.low_c + delta * step_c, -40.0f,
+                                   settings.high_c - hw::kHysteresisC);
+      } else if (selected_setting == 2) {
+        settings.freezer_lockout_c = constrain(
+            settings.freezer_lockout_c + delta * step_c, -40.0f, 20.0f);
+      } else if (selected_setting == 3) {
+        settings.fridge_alarm_c = constrain(
+            settings.fridge_alarm_c + delta * step_c, -20.0f, 40.0f);
+      } else {
+        settings.freezer_alarm_c = constrain(
+            settings.freezer_alarm_c + delta * step_c, -40.0f, 20.0f);
+      }
     } else if (selected_setting == 5) {
       display_fahrenheit = !display_fahrenheit;
     } else if (selected_setting <= 8) {
@@ -220,7 +304,9 @@ void update_encoder() {
       float shown_offset = display_fahrenheit
                                ? calibration_c[role] * 1.8f
                                : calibration_c[role];
-      shown_offset = constrain(shown_offset + delta * 0.1f, -5.0f, 5.0f);
+      const float shown_limit = display_fahrenheit ? 9.0f : 5.0f;
+      shown_offset = constrain(shown_offset + delta * 0.1f,
+                               -shown_limit, shown_limit);
       calibration_c[role] = display_fahrenheit ? shown_offset / 1.8f
                                                 : shown_offset;
     } else if (selected_setting == 9) {
@@ -258,10 +344,7 @@ void update_encoder() {
       if (next_option < 0) next_option += 6;
       settings.display_timeout_min = options[next_option];
     }
-    // Keep the two fridge thresholds in a meaningful order.
-    settings.low_c = min(settings.low_c, settings.high_c - hw::kHysteresisC);
-    settings.high_c = max(settings.high_c, settings.low_c + hw::kHysteresisC);
-    save_settings();
+    mark_settings_dirty();
   }
   if (button_down) {
     // Alarm acknowledgement has priority over all menu button actions.
@@ -269,6 +352,8 @@ void update_encoder() {
       alarm_snooze_until_ms = millis() + hw::kAlarmSnoozeMs;
       alarm_active = false;
       noTone(hw::kBuzzerPin);
+    } else if (assignment_mode && temperatures.detected_count() == 0) {
+      assignment_mode = false;
     } else if (assignment_mode && temperatures.detected_count() > 0) {
       const String selected_rom = temperatures.detected_rom(assignment_sensor);
       // A physical sensor may belong to only one logical location.
@@ -301,6 +386,7 @@ void update_display() {
     applied_oled_contrast_percent = settings.oled_contrast_percent;
   }
   if (display_awake && settings.display_timeout_min != 0 &&
+      !alarm_condition_present &&
       millis() - last_display_activity_ms >=
           static_cast<uint32_t>(settings.display_timeout_min) * 60UL * 1000UL) {
     display_awake = false;
@@ -328,6 +414,7 @@ void update_display() {
                      &control_output,
                      display_fahrenheit,
                      alarm_active,
+                     critical_probe_alarm,
                      assignment_mode,
                      menu_active,
                      selected_setting,
@@ -441,6 +528,7 @@ void loop() {
     last_control_ms = now;
     update_encoder();
     update_controller();
+    save_settings_when_idle();
   }
   if (now - last_display_ms >= hw::kDisplayPeriodMs) {
     last_display_ms = now;

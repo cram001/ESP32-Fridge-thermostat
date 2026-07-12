@@ -32,7 +32,7 @@ bool SettingsStore::to_json(JsonObject& root) {
 }
 
 bool SettingsStore::from_json(const JsonObject& root) {
-  settings_.high_c = constrain(root["high_c"] | settings_.high_c, -40.0f, 30.0f);
+  settings_.high_c = constrain(root["high_c"] | settings_.high_c, -39.5f, 30.0f);
   settings_.low_c = constrain(root["low_c"] | settings_.low_c, -40.0f, 30.0f);
   settings_.freezer_lockout_c = constrain(
       root["freezer_lockout_c"] | settings_.freezer_lockout_c, -40.0f, 20.0f);
@@ -74,7 +74,8 @@ bool SettingsStore::from_json(const JsonObject& root) {
   assigned_rom_[2] = root["ambient_rom"] | assigned_rom_[2];
 
   // Never allow the low threshold to overlap the high threshold.
-  settings_.low_c = min(settings_.low_c, settings_.high_c - 0.5f);
+  settings_.low_c = constrain(settings_.low_c, -40.0f,
+                              settings_.high_c - 0.5f);
   return true;
 }
 
@@ -82,7 +83,7 @@ const String ConfigSchema(const SettingsStore&) {
   return R"JSON({
     "type":"object",
     "properties":{
-      "high_c":{"title":"Spillover ON temperature (C)","type":"number","minimum":-40,"maximum":30},
+      "high_c":{"title":"Spillover ON temperature (C)","type":"number","minimum":-39.5,"maximum":30},
       "low_c":{"title":"Circulation ON temperature (C)","type":"number","minimum":-40,"maximum":30},
       "freezer_lockout_c":{"title":"Freezer lockout temperature (C)","type":"number","minimum":-40,"maximum":20},
       "fridge_alarm_c":{"title":"Fridge alarm temperature (C)","type":"number","minimum":-20,"maximum":40},
