@@ -53,7 +53,6 @@ uint32_t alarm_snooze_until_ms = 0;
 uint32_t fridge_failure_started_ms = 0;
 uint32_t spillover_started_ms = 0;
 uint8_t selected_error = 0;
-uint32_t last_temperature_ms = 0;
 uint32_t last_control_ms = 0;
 uint32_t last_display_ms = 0;
 uint32_t last_display_activity_ms = 0;
@@ -106,7 +105,11 @@ void save_settings_when_idle() {
 }
 
 void read_temperatures() {
-  temperatures.read(assigned_rom, calibration_c);
+  // poll() is non-blocking and paces its own conversion requests against
+  // hw::kTemperaturePeriodMs, so this can safely run every loop() tick.
+  if (!temperatures.poll(assigned_rom, calibration_c, hw::kTemperaturePeriodMs)) {
+    return;
+  }
   fridge_c = temperatures.role_temperature(0);
   freezer_c = temperatures.role_temperature(1);
   ambient_c = temperatures.role_temperature(2);
@@ -513,7 +516,6 @@ void loop() {
       last_encoder_position = encoder.getEncoderValue();
       encoder.detectButtonDown();  // discard presses made during the splash
     }
-    last_temperature_ms = now;
     last_control_ms = now;
     last_display_ms = now;
     last_display_activity_ms = now;
@@ -522,10 +524,9 @@ void loop() {
     update_display();
     return;
   }
-  if (now - last_temperature_ms >= hw::kTemperaturePeriodMs) {
-    last_temperature_ms = now;
-    read_temperatures();
-  }
+  // Non-blocking: paces its own conversion requests against
+  // hw::kTemperaturePeriodMs internally, so it's safe to call every tick.
+  read_temperatures();
   if (now - last_control_ms >= hw::kControlPeriodMs) {
     last_control_ms = now;
     update_encoder();

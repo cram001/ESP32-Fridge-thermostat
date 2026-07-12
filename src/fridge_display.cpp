@@ -150,7 +150,7 @@ void FridgeDisplay::draw_assignment(int x, int y,
   snprintf(line, sizeof(line), "ROM ...%s",
            model.assignment_rom.substring(8).c_str());
   oled_.drawStr(x, y + 47, line);
-  oled_.drawStr(x, y + 59, "Rotate / press assign");
+  oled_.drawStr(x, y + 61, "Rotate / press assign");
 }
 
 void FridgeDisplay::draw_fan(int center_x, int center_y, uint8_t phase) {
@@ -178,7 +178,7 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   //   2. small FRZ/FRDG column labels                    (y 12-20)
   //   3. hero digits w/ one decimal, Freezer left /       (y 20-42, ~20px --
   //      Fridge right, auto-shrinks if a string overflows  see below)
-  //   4. fan status strip                                 (y 42-62)
+  //   4. fan status strip                                 (y 42-64)
   // Coordinates are estimates against nominal U8g2 glyph metrics; expect to
   // nudge a few pixels once it's on real hardware.
   draw_wifi_icon(x + 9, y + 9, model.signalk_connected);
@@ -205,19 +205,19 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
 
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
-  oled_.drawStr(x + 2, y + 61, "SPILL");
-  if (model.control->spillover) draw_fan(x + 34, y + 56, fan_phase);
-  else oled_.drawStr(x + 31, y + 61, "-");
-  oled_.drawStr(x + 68, y + 61, "CIRC");
-  if (model.control->circulation) draw_fan(x + 96, y + 56, fan_phase);
-  else oled_.drawStr(x + 93, y + 61, "-");
+  oled_.drawStr(x + 2, y + 63, "SPILL");
+  if (model.control->spillover) draw_fan(x + 34, y + 58, fan_phase);
+  else oled_.drawStr(x + 31, y + 63, "-");
+  oled_.drawStr(x + 68, y + 63, "CIRC");
+  if (model.control->circulation) draw_fan(x + 96, y + 58, fan_phase);
+  else oled_.drawStr(x + 93, y + 63, "-");
 }
 
 void FridgeDisplay::draw_alarm(const DisplayModel& model) {
   // Full-screen inversion is far harder to miss from across a cabin than a
   // word appended to a small settings line plus a 10px corner triangle.
   oled_.setDrawColor(1);
-  oled_.drawBox(0, 0, 128, 62);
+  oled_.drawBox(0, 0, 128, 64);
   oled_.setDrawColor(0);
 
   oled_.setFont(u8g2_font_helvB10_tf);
@@ -338,8 +338,9 @@ void FridgeDisplay::draw_menu(int x, int y, const DisplayModel& model) {
 }
 
 void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
-  // Same content as before, but re-spaced to fit inside the 62px canvas --
-  // the previous "Rotate to browse" line at y+63 was drawn off-screen.
+  // Re-spaced to fit inside the confirmed 64px canvas -- the original
+  // "Rotate to browse" line at y+63 (against an assumed 62px canvas) was
+  // drawn off-screen.
   oled_.setFont(u8g2_font_6x10_tf);
   char line[24];
   oled_.drawStr(x, y + 10, "ACTIVE ERRORS");
@@ -351,8 +352,8 @@ void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
   }
   snprintf(line, sizeof(line), "Code E%02u", model.fault_code);
   oled_.drawStr(x, y + 34, line);
-  oled_.drawStr(x, y + 46, model.fault_message);
-  oled_.drawStr(x, y + 58, "Rotate to browse");
+  oled_.drawStr(x, y + 47, model.fault_message);
+  oled_.drawStr(x, y + 60, "Rotate to browse");
 }
 
 void FridgeDisplay::draw(const DisplayModel& model) {

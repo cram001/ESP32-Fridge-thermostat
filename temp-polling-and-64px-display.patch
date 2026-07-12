@@ -1,0 +1,245 @@
+diff --git a/include/hardware_config.h b/include/hardware_config.h
+index 3069086..f8b5e9c 100644
+--- a/include/hardware_config.h
++++ b/include/hardware_config.h
+@@ -31,7 +31,7 @@ constexpr uint8_t kOledResetPin = 26;
+ constexpr uint16_t kBuzzerFrequencyHz = 2400;
+ constexpr uint32_t kAlarmSnoozeMs = 60UL * 60UL * 1000UL;
+ 
+-constexpr uint32_t kTemperaturePeriodMs = 2000;
++constexpr uint32_t kTemperaturePeriodMs = 30UL * 1000UL;
+ constexpr uint32_t kControlPeriodMs = 250;
+ constexpr uint32_t kDisplayPeriodMs = 250;
+ constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
+diff --git a/include/temperature_manager.h b/include/temperature_manager.h
+index f1d3ec5..82c45dc 100644
+--- a/include/temperature_manager.h
++++ b/include/temperature_manager.h
+@@ -12,8 +12,14 @@ class TemperatureManager {
+ 
+   explicit TemperatureManager(uint8_t pin);
+   bool begin(String assigned_rom[kRoleCount]);
+-  void read(const String assigned_rom[kRoleCount],
+-            const float calibration_c[kRoleCount]);
++
++  // Non-blocking: call every loop() iteration. Internally paces itself to
++  // start at most one conversion per sample_period_ms and returns true on
++  // the tick a conversion finishes and role temperatures are refreshed --
++  // DS18B20 conversion time (~190ms at 10-bit) is spent doing other work
++  // instead of blocking the shared loop.
++  bool poll(const String assigned_rom[kRoleCount],
++           const float calibration_c[kRoleCount], uint32_t sample_period_ms);
+ 
+   float role_temperature(uint8_t role) const { return role_temp_c_[role]; }
+   SensorStatus role_status(uint8_t role) const { return role_status_[role]; }
+@@ -24,7 +30,14 @@ class TemperatureManager {
+   String detected_rom(uint8_t sensor) const;
+ 
+  private:
++  // 10-bit resolution converts in ~187.5ms per the DS18B20 datasheet;
++  // rounded up for margin.
++  static constexpr uint32_t kConversionDelayMs = 190;
++  enum class ConversionState : uint8_t { kIdle, kWaiting };
++
+   static String rom_to_string(const DeviceAddress rom);
++  void collect(const String assigned_rom[kRoleCount],
++              const float calibration_c[kRoleCount]);
+ 
+   OneWire one_wire_;
+   DallasTemperature bus_;
+@@ -34,4 +47,7 @@ class TemperatureManager {
+   SensorStatus role_status_[kRoleCount] = {
+       SensorStatus::kMissing, SensorStatus::kMissing, SensorStatus::kMissing};
+   uint8_t detected_count_ = 0;
++  ConversionState conversion_state_ = ConversionState::kIdle;
++  uint32_t conversion_started_ms_ = 0;
++  uint32_t last_request_ms_ = 0;
+ };
+diff --git a/src/fridge_display.cpp b/src/fridge_display.cpp
+index 3a539b4..494ecd0 100644
+--- a/src/fridge_display.cpp
++++ b/src/fridge_display.cpp
+@@ -150,7 +150,7 @@ void FridgeDisplay::draw_assignment(int x, int y,
+   snprintf(line, sizeof(line), "ROM ...%s",
+            model.assignment_rom.substring(8).c_str());
+   oled_.drawStr(x, y + 47, line);
+-  oled_.drawStr(x, y + 59, "Rotate / press assign");
++  oled_.drawStr(x, y + 61, "Rotate / press assign");
+ }
+ 
+ void FridgeDisplay::draw_fan(int center_x, int center_y, uint8_t phase) {
+@@ -178,7 +178,7 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
+   //   2. small FRZ/FRDG column labels                    (y 12-20)
+   //   3. hero digits w/ one decimal, Freezer left /       (y 20-42, ~20px --
+   //      Fridge right, auto-shrinks if a string overflows  see below)
+-  //   4. fan status strip                                 (y 42-62)
++  //   4. fan status strip                                 (y 42-64)
+   // Coordinates are estimates against nominal U8g2 glyph metrics; expect to
+   // nudge a few pixels once it's on real hardware.
+   draw_wifi_icon(x + 9, y + 9, model.signalk_connected);
+@@ -205,19 +205,19 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
+ 
+   oled_.setFont(u8g2_font_6x10_tf);
+   const uint8_t fan_phase = (millis() / 200) % 6;
+-  oled_.drawStr(x + 2, y + 61, "SPILL");
+-  if (model.control->spillover) draw_fan(x + 34, y + 56, fan_phase);
+-  else oled_.drawStr(x + 31, y + 61, "-");
+-  oled_.drawStr(x + 68, y + 61, "CIRC");
+-  if (model.control->circulation) draw_fan(x + 96, y + 56, fan_phase);
+-  else oled_.drawStr(x + 93, y + 61, "-");
++  oled_.drawStr(x + 2, y + 63, "SPILL");
++  if (model.control->spillover) draw_fan(x + 34, y + 58, fan_phase);
++  else oled_.drawStr(x + 31, y + 63, "-");
++  oled_.drawStr(x + 68, y + 63, "CIRC");
++  if (model.control->circulation) draw_fan(x + 96, y + 58, fan_phase);
++  else oled_.drawStr(x + 93, y + 63, "-");
+ }
+ 
+ void FridgeDisplay::draw_alarm(const DisplayModel& model) {
+   // Full-screen inversion is far harder to miss from across a cabin than a
+   // word appended to a small settings line plus a 10px corner triangle.
+   oled_.setDrawColor(1);
+-  oled_.drawBox(0, 0, 128, 62);
++  oled_.drawBox(0, 0, 128, 64);
+   oled_.setDrawColor(0);
+ 
+   oled_.setFont(u8g2_font_helvB10_tf);
+@@ -338,8 +338,9 @@ void FridgeDisplay::draw_menu(int x, int y, const DisplayModel& model) {
+ }
+ 
+ void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
+-  // Same content as before, but re-spaced to fit inside the 62px canvas --
+-  // the previous "Rotate to browse" line at y+63 was drawn off-screen.
++  // Re-spaced to fit inside the confirmed 64px canvas -- the original
++  // "Rotate to browse" line at y+63 (against an assumed 62px canvas) was
++  // drawn off-screen.
+   oled_.setFont(u8g2_font_6x10_tf);
+   char line[24];
+   oled_.drawStr(x, y + 10, "ACTIVE ERRORS");
+@@ -351,8 +352,8 @@ void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
+   }
+   snprintf(line, sizeof(line), "Code E%02u", model.fault_code);
+   oled_.drawStr(x, y + 34, line);
+-  oled_.drawStr(x, y + 46, model.fault_message);
+-  oled_.drawStr(x, y + 58, "Rotate to browse");
++  oled_.drawStr(x, y + 47, model.fault_message);
++  oled_.drawStr(x, y + 60, "Rotate to browse");
+ }
+ 
+ void FridgeDisplay::draw(const DisplayModel& model) {
+diff --git a/src/main.cpp b/src/main.cpp
+index dd04bd4..7f0a40f 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -53,7 +53,6 @@ uint32_t alarm_snooze_until_ms = 0;
+ uint32_t fridge_failure_started_ms = 0;
+ uint32_t spillover_started_ms = 0;
+ uint8_t selected_error = 0;
+-uint32_t last_temperature_ms = 0;
+ uint32_t last_control_ms = 0;
+ uint32_t last_display_ms = 0;
+ uint32_t last_display_activity_ms = 0;
+@@ -106,7 +105,11 @@ void save_settings_when_idle() {
+ }
+ 
+ void read_temperatures() {
+-  temperatures.read(assigned_rom, calibration_c);
++  // poll() is non-blocking and paces its own conversion requests against
++  // hw::kTemperaturePeriodMs, so this can safely run every loop() tick.
++  if (!temperatures.poll(assigned_rom, calibration_c, hw::kTemperaturePeriodMs)) {
++    return;
++  }
+   fridge_c = temperatures.role_temperature(0);
+   freezer_c = temperatures.role_temperature(1);
+   ambient_c = temperatures.role_temperature(2);
+@@ -513,7 +516,6 @@ void loop() {
+       last_encoder_position = encoder.getEncoderValue();
+       encoder.detectButtonDown();  // discard presses made during the splash
+     }
+-    last_temperature_ms = now;
+     last_control_ms = now;
+     last_display_ms = now;
+     last_display_activity_ms = now;
+@@ -522,10 +524,9 @@ void loop() {
+     update_display();
+     return;
+   }
+-  if (now - last_temperature_ms >= hw::kTemperaturePeriodMs) {
+-    last_temperature_ms = now;
+-    read_temperatures();
+-  }
++  // Non-blocking: paces its own conversion requests against
++  // hw::kTemperaturePeriodMs internally, so it's safe to call every tick.
++  read_temperatures();
+   if (now - last_control_ms >= hw::kControlPeriodMs) {
+     last_control_ms = now;
+     update_encoder();
+diff --git a/src/settings_store.cpp b/src/settings_store.cpp
+index 36f36cf..5ebff22 100644
+--- a/src/settings_store.cpp
++++ b/src/settings_store.cpp
+@@ -1,5 +1,7 @@
+ #include "settings_store.h"
+ 
++#include "hardware_config.h"
++
+ SettingsStore::SettingsStore(ControllerSettings& settings, bool& fahrenheit,
+                              float calibration_c[3], String assigned_rom[3],
+                              String& vessel_name)
+@@ -81,7 +83,7 @@ bool SettingsStore::from_json(const JsonObject& root) {
+ 
+   // Never allow the low threshold to overlap the high threshold.
+   settings_.low_c = constrain(settings_.low_c, -40.0f,
+-                              settings_.high_c - 0.5f);
++                              settings_.high_c - hw::kHysteresisC);
+   return true;
+ }
+ 
+diff --git a/src/temperature_manager.cpp b/src/temperature_manager.cpp
+index 32279ea..7ed6d0a 100644
+--- a/src/temperature_manager.cpp
++++ b/src/temperature_manager.cpp
+@@ -13,6 +13,9 @@ String TemperatureManager::rom_to_string(const DeviceAddress rom) {
+ bool TemperatureManager::begin(String assigned_rom[kRoleCount]) {
+   bus_.begin();
+   bus_.setResolution(10);
++  // Conversions are collected on our own schedule in poll(), so the bus
++  // must not block the caller waiting for them to finish.
++  bus_.setWaitForConversion(false);
+   detected_count_ = min<uint8_t>(bus_.getDeviceCount(), kMaxSensors);
+   bool assignments_changed = false;
+   // Provide a usable first-boot mapping. The on-device assignment workflow
+@@ -27,9 +30,30 @@ bool TemperatureManager::begin(String assigned_rom[kRoleCount]) {
+   return assignments_changed;
+ }
+ 
+-void TemperatureManager::read(const String assigned_rom[kRoleCount],
+-                              const float calibration_c[kRoleCount]) {
+-  bus_.requestTemperatures();
++bool TemperatureManager::poll(const String assigned_rom[kRoleCount],
++                              const float calibration_c[kRoleCount],
++                              uint32_t sample_period_ms) {
++  const uint32_t now = millis();
++  if (conversion_state_ == ConversionState::kIdle) {
++    // last_request_ms_ == 0 only before the very first sample; take it
++    // immediately rather than waiting out a full period on cold boot.
++    if (last_request_ms_ != 0 && now - last_request_ms_ < sample_period_ms) {
++      return false;
++    }
++    bus_.requestTemperatures();
++    conversion_started_ms_ = now;
++    conversion_state_ = ConversionState::kWaiting;
++    return false;
++  }
++  if (now - conversion_started_ms_ < kConversionDelayMs) return false;
++  collect(assigned_rom, calibration_c);
++  last_request_ms_ = now;
++  conversion_state_ = ConversionState::kIdle;
++  return true;
++}
++
++void TemperatureManager::collect(const String assigned_rom[kRoleCount],
++                                 const float calibration_c[kRoleCount]) {
+   for (uint8_t i = 0; i < detected_count_; ++i) {
+     const float value = bus_.getTempC(detected_roms_[i]);
+     detected_temp_c_[i] = value == DEVICE_DISCONNECTED_C ? NAN : value;
