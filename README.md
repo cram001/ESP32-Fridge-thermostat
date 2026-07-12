@@ -34,4 +34,4 @@ From DFRobot:
 
 From other sources:
 1. HiLetgo 2.42" SSD1309 128x64 OLED Display Module 2.42 Inch (SPI connection)
-2. Enclosure (can be 3D printed) ... see thingaverse 
+2. 3D printed enclosure  ... see thingaverse  https://www.thingiverse.com/thing:7381757
