@@ -1,5 +1,7 @@
 #include "settings_store.h"
 
+#include "hardware_config.h"
+
 SettingsStore::SettingsStore(ControllerSettings& settings, bool& fahrenheit,
                              float calibration_c[3], String assigned_rom[3],
                              String& vessel_name)
@@ -81,7 +83,7 @@ bool SettingsStore::from_json(const JsonObject& root) {
 
   // Never allow the low threshold to overlap the high threshold.
   settings_.low_c = constrain(settings_.low_c, -40.0f,
-                              settings_.high_c - 0.5f);
+                              settings_.high_c - hw::kHysteresisC);
   return true;
 }
 

@@ -13,6 +13,9 @@ String TemperatureManager::rom_to_string(const DeviceAddress rom) {
 bool TemperatureManager::begin(String assigned_rom[kRoleCount]) {
   bus_.begin();
   bus_.setResolution(10);
+  // Conversions are collected on our own schedule in poll(), so the bus
+  // must not block the caller waiting for them to finish.
+  bus_.setWaitForConversion(false);
   detected_count_ = min<uint8_t>(bus_.getDeviceCount(), kMaxSensors);
   bool assignments_changed = false;
   // Provide a usable first-boot mapping. The on-device assignment workflow
@@ -27,9 +30,30 @@ bool TemperatureManager::begin(String assigned_rom[kRoleCount]) {
   return assignments_changed;
 }
 
-void TemperatureManager::read(const String assigned_rom[kRoleCount],
-                              const float calibration_c[kRoleCount]) {
-  bus_.requestTemperatures();
+bool TemperatureManager::poll(const String assigned_rom[kRoleCount],
+                              const float calibration_c[kRoleCount],
+                              uint32_t sample_period_ms) {
+  const uint32_t now = millis();
+  if (conversion_state_ == ConversionState::kIdle) {
+    // last_request_ms_ == 0 only before the very first sample; take it
+    // immediately rather than waiting out a full period on cold boot.
+    if (last_request_ms_ != 0 && now - last_request_ms_ < sample_period_ms) {
+      return false;
+    }
+    bus_.requestTemperatures();
+    conversion_started_ms_ = now;
+    conversion_state_ = ConversionState::kWaiting;
+    return false;
+  }
+  if (now - conversion_started_ms_ < kConversionDelayMs) return false;
+  collect(assigned_rom, calibration_c);
+  last_request_ms_ = now;
+  conversion_state_ = ConversionState::kIdle;
+  return true;
+}
+
+void TemperatureManager::collect(const String assigned_rom[kRoleCount],
+                                 const float calibration_c[kRoleCount]) {
   for (uint8_t i = 0; i < detected_count_; ++i) {
     const float value = bus_.getTempC(detected_roms_[i]);
     detected_temp_c_[i] = value == DEVICE_DISCONNECTED_C ? NAN : value;

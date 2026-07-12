@@ -31,7 +31,7 @@ constexpr uint8_t kOledResetPin = 26;
 constexpr uint16_t kBuzzerFrequencyHz = 2400;
 constexpr uint32_t kAlarmSnoozeMs = 60UL * 60UL * 1000UL;
 
-constexpr uint32_t kTemperaturePeriodMs = 2000;
+constexpr uint32_t kTemperaturePeriodMs = 30UL * 1000UL;
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
 constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
