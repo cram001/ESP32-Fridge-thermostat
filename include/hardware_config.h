@@ -29,8 +29,6 @@ constexpr uint8_t kOledDcPin = 25;
 constexpr uint8_t kOledResetPin = 26;
 
 constexpr uint16_t kBuzzerFrequencyHz = 2400;
-constexpr uint32_t kAlarmSnoozeMs = 60UL * 60UL * 1000UL;
-
 constexpr uint32_t kTemperaturePeriodMs = 30UL * 1000UL;
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
@@ -40,7 +38,7 @@ constexpr uint32_t kEncoderContinuousLimitMs = 10UL * 1000UL;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
 constexpr int32_t kEncoderMaxDeltaPerPoll = 8;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
-constexpr uint32_t kSplashDurationMs = 30UL * 1000UL;
+constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;
 
 constexpr char kFirmwareVersion[] = "v1.0.0";

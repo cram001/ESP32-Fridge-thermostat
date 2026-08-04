@@ -15,14 +15,51 @@ Total daily power consumption, with OLED always ON is less than 1 Ah (12VDC syst
    connecting fan drivers. Fans require MOSFET/relay drivers and flyback
    protection; do not power them from ESP32 GPIO pins.
 2. Connect DS18B20 sensors to the shared 1-Wire bus with a 4.7 kohm pull-up.
-   The temporary role order is fridge, freezer, ambient by bus index.
 3. Build and upload with PlatformIO, then configure Wi-Fi and Signal K using the
-   SensESP web interface. (SignalK is optional but useful if you want to send temps to NMEA2000 network, build a custom dashboard or interact with NodeRed, etc....
-4. Press the rotary button to select high, low, or freezer-lockout temperature;
-   rotate in 0.5 C steps.
+   SensESP web interface. Signal K is optional, but it can forward temperatures
+   to an NMEA 2000 network, support custom dashboards, and integrate with
+   Node-RED.
+4. The 15-second splash screen is also an output test: both fan outputs remain
+   ON while the splash is visible. Confirm that both fans run, then confirm
+   that normal temperature control takes over when the countdown ends.
+5. Assign each sensor explicitly. Warm one probe by hand and identify its live
+   temperature under `environment.inside.refrigerator.detectedProbeN` in the
+   Signal K data browser, or on the OLED assignment screen. On the OLED, choose
+   `Assign fridge`, `Assign freezer`, or `Assign ambient`, rotate to the matching
+   probe, and press to save its ROM.
+6. Press the rotary button to browse settings; rotate to edit the selected item.
 
-Before permanent installation, configure sensors by their unique ROM addresses
-so reconnecting or replacing wiring cannot exchange fridge and freezer roles. Changing a DS18B20 sensor requires a reboot (power cycle). 
+Sensor roles are never assigned automatically by OneWire bus order. They follow
+the saved 64-bit ROM, so reconnecting wiring cannot exchange fridge and freezer
+roles. To replace a sensor, power-cycle so the new ROM is discovered, warm the
+new probe to identify it, and use the appropriate `Assign ...` item. Saving the
+new selection overwrites the old ROM for that role. If that physical sensor was
+assigned elsewhere, the old duplicate assignment is cleared automatically.
+
+The freezer probe is optional for control. If it is missing, the fridge probe
+continues to control the spillover fan. If the freezer probe is present and its
+valid temperature is above the configured lockout, the spillover fan remains
+off.
+
+## Fridge-probe failure / get-me-home mode
+
+A missing or invalid fridge probe raises a persistent alarm and disables normal
+thermostat control. The spillover fan remains OFF by default. The user may select
+an explicit get-me-home duty cycle of 5, 10, 20, 30, or 40 minutes ON per hour.
+Changing the setting starts a new ON interval immediately. Select OFF when the
+temporary mode is no longer required.
+
+Pressing the encoder acknowledges an active alarm. This stops the buzzer and
+full-screen visual alert, but the alarm remains active in Signal K until its
+underlying condition clears.
+
+## Development checks
+
+Run the host-side controller tests without ESP32 hardware:
+
+```sh
+./tools/run-native-tests.sh
+```
 
 ## Hardware
 
