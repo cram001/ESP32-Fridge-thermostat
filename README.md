@@ -39,7 +39,7 @@ assigned elsewhere, the old duplicate assignment is cleared automatically.
 The freezer probe is optional for control. If it is missing, the fridge probe
 continues to control the spillover fan. If the freezer probe is present and its
 valid temperature is above the configured lockout, the spillover fan remains
-off.
+off. (avoids pushing too much warm air into the freezer, potentially thawing food while the compressor/evaporator kick in to remove the additional heat).
 
 ## Fridge-probe failure / get-me-home mode
 
