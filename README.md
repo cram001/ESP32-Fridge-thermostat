@@ -17,7 +17,7 @@ Total daily power consumption, with OLED always ON is less than 1 Ah (12VDC syst
 2. Connect DS18B20 sensors to the shared 1-Wire bus with a 4.7 kohm pull-up.
    The temporary role order is fridge, freezer, ambient by bus index.
 3. Build and upload with PlatformIO, then configure Wi-Fi and Signal K using the
-   SensESP web interface.
+   SensESP web interface. (SignalK is optional but useful if you want to send temps to NMEA2000 network, build a custom dashboard or interact with NodeRed, etc....
 4. Press the rotary button to select high, low, or freezer-lockout temperature;
    rotate in 0.5 C steps.
 
