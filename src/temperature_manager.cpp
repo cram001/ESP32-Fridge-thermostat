@@ -10,24 +10,16 @@ String TemperatureManager::rom_to_string(const DeviceAddress rom) {
   return String(text);
 }
 
-bool TemperatureManager::begin(String assigned_rom[kRoleCount]) {
+void TemperatureManager::begin() {
   bus_.begin();
   bus_.setResolution(10);
   // Conversions are collected on our own schedule in poll(), so the bus
   // must not block the caller waiting for them to finish.
   bus_.setWaitForConversion(false);
   detected_count_ = min<uint8_t>(bus_.getDeviceCount(), kMaxSensors);
-  bool assignments_changed = false;
-  // Provide a usable first-boot mapping. The on-device assignment workflow
-  // replaces these provisional index-based roles with confirmed ROM mappings.
   for (uint8_t i = 0; i < detected_count_; ++i) {
     bus_.getAddress(detected_roms_[i], i);
-    if (i < kRoleCount && assigned_rom[i].isEmpty()) {
-      assigned_rom[i] = rom_to_string(detected_roms_[i]);
-      assignments_changed = true;
-    }
   }
-  return assignments_changed;
 }
 
 bool TemperatureManager::poll(const String assigned_rom[kRoleCount],

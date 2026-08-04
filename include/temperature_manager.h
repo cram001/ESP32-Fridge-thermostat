@@ -11,7 +11,7 @@ class TemperatureManager {
   static constexpr uint8_t kMaxSensors = 8;
 
   explicit TemperatureManager(uint8_t pin);
-  bool begin(String assigned_rom[kRoleCount]);
+  void begin();
 
   // Non-blocking: call every loop() iteration. Internally paces itself to
   // start at most one conversion per sample_period_ms and returns true on

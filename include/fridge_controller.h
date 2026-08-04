@@ -14,7 +14,9 @@ struct ControllerSettings {
   uint16_t fan_delay_s = 30;
   uint8_t spillover_min_on_min = 2;
   uint8_t circulation_min_on_min = 2;
-  uint8_t failsafe_off_min = 15;
+  // Explicit get-me-home mode used only when the fridge probe has failed.
+  // Zero keeps the spillover fan off; non-zero values are minutes ON per hour.
+  uint8_t emergency_spillover_on_min = 0;
   bool buzzer_enabled = true;
   uint8_t oled_contrast_percent = 50;
   uint8_t display_timeout_min = 0;
@@ -107,4 +109,37 @@ class FridgeController {
   uint32_t circulation_pending_since_ = 0;
   uint32_t spillover_started_at_ = 0;
   uint32_t circulation_started_at_ = 0;
+};
+
+// Pure timing helper for the explicit fridge-probe-failure mode. The selected
+// duty cycle starts immediately when it is enabled or changed, then repeats on
+// a fixed one-hour period. A missing freezer probe is intentionally permissive;
+// a valid warm-freezer reading still enforces the normal lockout.
+class EmergencySpilloverController {
+ public:
+  bool update(uint32_t now, bool fridge_probe_failed, bool freezer_valid,
+              float freezer_c, const ControllerSettings& settings) {
+    if (!fridge_probe_failed) {
+      active_ = false;
+      return false;
+    }
+    if (!active_ ||
+        applied_on_min_ != settings.emergency_spillover_on_min) {
+      active_ = true;
+      cycle_started_ms_ = now;
+      applied_on_min_ = settings.emergency_spillover_on_min;
+    }
+    const bool freezer_allows_spillover =
+        !freezer_valid || freezer_c <= settings.freezer_lockout_c;
+    const uint32_t on_ms = static_cast<uint32_t>(applied_on_min_) *
+                           60UL * 1000UL;
+    constexpr uint32_t kHourMs = 60UL * 60UL * 1000UL;
+    return freezer_allows_spillover && on_ms != 0 &&
+           (now - cycle_started_ms_) % kHourMs < on_ms;
+  }
+
+ private:
+  bool active_ = false;
+  uint8_t applied_on_min_ = 0;
+  uint32_t cycle_started_ms_ = 0;
 };

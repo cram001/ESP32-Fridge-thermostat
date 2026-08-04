@@ -1,7 +1,7 @@
 #include "fridge_display.h"
 
 namespace {
-constexpr uint8_t kSettingCount = 18;
+constexpr uint8_t kSettingCount = 20;
 }
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
@@ -57,7 +57,7 @@ void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
   char status[18];
   snprintf(status, sizeof(status), "PROBES %u", detected_count);
   oled_.drawStr(2, 63, status);
-  oled_.drawStr(54, 63, "FANS OFF");
+  oled_.drawStr(54, 63, "FANS ON");
   snprintf(status, sizeof(status), "%us", seconds_remaining);
   const int countdown_width = oled_.getStrWidth(status);
   oled_.drawStr(127 - countdown_width, 63, status);
@@ -194,7 +194,7 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   }
   oled_.setFont(u8g2_font_helvB10_tf);
   const int ambient_w = oled_.getStrWidth(ambient_text);
-  oled_.drawStr(x + 126 - ambient_w, y + 11, ambient_text);
+  oled_.drawStr(x + 125 - ambient_w, y + 11, ambient_text);
 
   oled_.setFont(u8g2_font_6x10_tf);
   oled_.drawStr(x + 2, y + 19, "FRZ");
@@ -205,12 +205,12 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
 
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
-  oled_.drawStr(x + 2, y + 63, "SPILL");
-  if (model.control->spillover) draw_fan(x + 34, y + 58, fan_phase);
-  else oled_.drawStr(x + 31, y + 63, "-");
-  oled_.drawStr(x + 68, y + 63, "CIRC");
-  if (model.control->circulation) draw_fan(x + 96, y + 58, fan_phase);
-  else oled_.drawStr(x + 93, y + 63, "-");
+  oled_.drawStr(x + 2, y + 62, "SPILL");
+  if (model.control->spillover) draw_fan(x + 34, y + 57, fan_phase);
+  else oled_.drawStr(x + 31, y + 62, "-");
+  oled_.drawStr(x + 68, y + 62, "CIRC");
+  if (model.control->circulation) draw_fan(x + 96, y + 57, fan_phase);
+  else oled_.drawStr(x + 93, y + 62, "-");
 }
 
 void FridgeDisplay::draw_alarm(const DisplayModel& model) {
@@ -289,8 +289,13 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     snprintf(t.value, sizeof(t.value), "%um",
              model.settings->circulation_min_on_min);
   } else if (model.selected_setting == 12) {
-    t.name = "Failsafe off";
-    snprintf(t.value, sizeof(t.value), "%um", model.settings->failsafe_off_min);
+    t.name = "Get-me-home fan";
+    if (model.settings->emergency_spillover_on_min == 0) {
+      snprintf(t.value, sizeof(t.value), "OFF");
+    } else {
+      snprintf(t.value, sizeof(t.value), "%um/hour",
+               model.settings->emergency_spillover_on_min);
+    }
   } else if (model.selected_setting == 13) {
     t.name = "Buzzer";
     snprintf(t.value, sizeof(t.value), "%s",
@@ -307,8 +312,12 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
       snprintf(t.value, sizeof(t.value), "%um",
                model.settings->display_timeout_min);
     }
+  } else if (model.selected_setting >= 17 && model.selected_setting <= 19) {
+    const char* roles[] = {"Assign fridge", "Assign freezer", "Assign ambient"};
+    t.name = roles[model.selected_setting - 17];
+    t.value[0] = '\0';
   } else {
-    t.name = "Assign sensors";
+    t.name = "";
     t.value[0] = '\0';
   }
   return t;
@@ -352,18 +361,21 @@ void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
   }
   snprintf(line, sizeof(line), "Code E%02u", model.fault_code);
   oled_.drawStr(x, y + 34, line);
+  // Some fault messages exceed 128px in the 6x10 font. The 5x7 font keeps
+  // every current message inside the one-pixel-shifted safe area.
+  oled_.setFont(u8g2_font_5x7_tf);
   oled_.drawStr(x, y + 47, model.fault_message);
+  oled_.setFont(u8g2_font_6x10_tf);
   oled_.drawStr(x, y + 60, "Rotate to browse");
 }
 
 void FridgeDisplay::draw(const DisplayModel& model) {
   // A small repeating offset distributes OLED wear without making the
   // movement visually distracting.
-  static const int8_t shifts[][2] = {{0, 0}, {2, 0}, {2, 2},
-                                     {0, 2}, {1, 1}};
+  static const int8_t shifts[][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
   if (millis() - last_shift_ms_ >= shift_period_ms_) {
     last_shift_ms_ = millis();
-    shift_index_ = (shift_index_ + 1) % 5;
+    shift_index_ = (shift_index_ + 1) % 4;
   }
   const int x = shifts[shift_index_][0];
   const int y = shifts[shift_index_][1];
@@ -388,7 +400,7 @@ void FridgeDisplay::draw(const DisplayModel& model) {
   // fault (alarm banner, error browser) so it only overlays home/menu.
   if (!model.alarm_active && !showing_errors && !model.assignment_mode &&
       model.fault_count > 0) {
-    if (millis() % 2000UL < 650UL) draw_warning_triangle(x + 116, y + 1);
+    if (millis() % 2000UL < 650UL) draw_warning_triangle(x + 114, y + 1);
   }
   oled_.sendBuffer();
 }

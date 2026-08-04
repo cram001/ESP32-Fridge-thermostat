@@ -33,6 +33,7 @@ FridgeDisplay display(hw::kOledCsPin, hw::kOledDcPin, hw::kOledResetPin,
                       hw::kPixelShiftPeriodMs);
 
 FridgeController controller;
+EmergencySpilloverController emergency_spillover_controller;
 ControllerOutput control_output;
 FaultManager faults;
 float fridge_c = NAN;
@@ -46,11 +47,11 @@ bool encoder_available = false;
 int32_t last_encoder_position = 0;
 uint8_t selected_setting = 0;
 bool alarm_active = false;
+bool alarm_acknowledged = false;
+bool alarm_visual_active = false;
 bool alarm_condition_present = false;
 bool critical_probe_alarm = false;
 bool temperature_alarm_armed = false;
-uint32_t alarm_snooze_until_ms = 0;
-uint32_t fridge_failure_started_ms = 0;
 uint32_t spillover_started_ms = 0;
 uint8_t selected_error = 0;
 uint32_t last_control_ms = 0;
@@ -60,6 +61,7 @@ bool display_awake = true;
 uint8_t applied_oled_contrast_percent = 0;
 uint32_t last_menu_activity_ms = 0;
 constexpr uint32_t kMenuActivityTimeoutMs = 10UL * 1000UL;
+constexpr uint8_t kSettingCount = 20;
 uint32_t splash_started_ms = 0;
 bool splash_active = true;
 bool settings_dirty = false;
@@ -78,6 +80,8 @@ std::shared_ptr<SKOutput<bool>> sk_circulation;
 std::shared_ptr<SKOutput<bool>> sk_lockout;
 std::shared_ptr<SKOutput<bool>> sk_fault;
 std::shared_ptr<SKOutput<bool>> sk_alarm;
+std::shared_ptr<SKOutput<float>> sk_detected_temp[TemperatureManager::kMaxSensors];
+std::shared_ptr<SKOutput<String>> sk_detected_rom[TemperatureManager::kMaxSensors];
 
 void write_fan(uint8_t pin, bool on) {
   digitalWrite(pin, on == hw::kFanActiveHigh ? HIGH : LOW);
@@ -119,6 +123,12 @@ void read_temperatures() {
   sk_fridge->set(std::isfinite(fridge_c) ? fridge_c + 273.15f : NAN);
   sk_freezer->set(std::isfinite(freezer_c) ? freezer_c + 273.15f : NAN);
   sk_ambient->set(std::isfinite(ambient_c) ? ambient_c + 273.15f : NAN);
+  for (uint8_t sensor = 0; sensor < temperatures.detected_count(); ++sensor) {
+    const float detected_c = temperatures.detected_temperature(sensor);
+    sk_detected_temp[sensor]->set(
+        std::isfinite(detected_c) ? detected_c + 273.15f : NAN);
+    sk_detected_rom[sensor]->set(temperatures.detected_rom(sensor));
+  }
 }
 
 void update_controller() {
@@ -146,18 +156,15 @@ void update_controller() {
   control_output = controller.update(fridge_c, freezer_c, settings,
                                      hw::kHysteresisC);
 
-  // Without the controlling fridge probe, use a bounded duty cycle instead of
-  // leaving food warm indefinitely or running the spillover fan continuously.
+  // A failed fridge probe requires an explicit get-me-home duty-cycle setting.
+  // A missing freezer probe is intentionally ignored; if it is providing a
+  // valid reading, however, its normal warm-freezer lockout still applies.
   if (fridge_status != Status::kOk) {
-    if (fridge_failure_started_ms == 0) fridge_failure_started_ms = now;
-    const uint32_t on_ms = 5UL * 60UL * 1000UL;
-    const uint32_t cycle_ms =
-        (5UL + settings.failsafe_off_min) * 60UL * 1000UL;
-    control_output.spillover =
-        (now - fridge_failure_started_ms) % cycle_ms < on_ms;
+    control_output.spillover = emergency_spillover_controller.update(
+        now, true, freezer_status == Status::kOk, freezer_c, settings);
     control_output.circulation = false;
   } else {
-    fridge_failure_started_ms = 0;
+    emergency_spillover_controller.update(now, false, false, NAN, settings);
   }
 
   if (control_output.spillover) {
@@ -185,27 +192,22 @@ void update_controller() {
   const bool temperature_alarm_condition = temperature_alarm_armed &&
       ((std::isfinite(fridge_c) && fridge_c >= settings.fridge_alarm_c) ||
        (std::isfinite(freezer_c) && freezer_c >= settings.freezer_alarm_c));
-  critical_probe_alarm = fridge_status != Status::kOk ||
-                         freezer_status != Status::kOk;
+  critical_probe_alarm = fridge_status != Status::kOk;
   alarm_condition_present = temperature_alarm_condition ||
                             critical_probe_alarm;
   if (!alarm_condition_present) {
-    // Clearing the fault also clears any remaining snooze time. A later,
-    // genuinely new high-temperature event must alarm immediately.
-    alarm_snooze_until_ms = 0;
     alarm_active = false;
+    alarm_acknowledged = false;
   } else {
-    // Signed subtraction makes this comparison safe when millis() wraps.
-    const bool snoozed = alarm_snooze_until_ms != 0 &&
-        static_cast<int32_t>(millis() - alarm_snooze_until_ms) < 0;
-    alarm_active = !snoozed;
+    alarm_active = true;
   }
-  if (alarm_condition_present) {
+  alarm_visual_active = alarm_active && !alarm_acknowledged;
+  if (alarm_visual_active) {
     display_awake = true;
     last_display_activity_ms = now;
     display.set_enabled(true);
   }
-  if (alarm_active && settings.buzzer_enabled) {
+  if (alarm_visual_active && settings.buzzer_enabled) {
     tone(hw::kBuzzerPin, hw::kBuzzerFrequencyHz);
   }
   else noTone(hw::kBuzzerPin);
@@ -273,7 +275,7 @@ void update_encoder() {
   }
   if (delta != 0 || button_down) {
     last_display_activity_ms = millis();
-    if (!alarm_active && !assignment_mode) last_menu_activity_ms = millis();
+    if (!alarm_visual_active && !assignment_mode) last_menu_activity_ms = millis();
   }
   if (delta != 0) {
     // Rotation selects a physical probe during assignment; otherwise it edits
@@ -323,12 +325,13 @@ void update_encoder() {
       settings.circulation_min_on_min = constrain(
           static_cast<int>(settings.circulation_min_on_min) + delta, 1, 5);
     } else if (selected_setting == 12) {
-      const int options[] = {5, 10, 15, 20};
-      uint8_t option = settings.failsafe_off_min == 5 ? 0
-                       : settings.failsafe_off_min == 10 ? 1
-                       : settings.failsafe_off_min == 15 ? 2 : 3;
-      option = (option + delta + 32) % 4;
-      settings.failsafe_off_min = options[option];
+      const uint8_t options[] = {0, 5, 10, 20, 30, 40};
+      uint8_t option = 0;
+      while (option < 5 &&
+             options[option] != settings.emergency_spillover_on_min) option++;
+      int32_t next_option = (static_cast<int32_t>(option) + delta) % 6;
+      if (next_option < 0) next_option += 6;
+      settings.emergency_spillover_on_min = options[next_option];
     } else if (selected_setting == 13) {
       settings.buzzer_enabled = !settings.buzzer_enabled;
     } else if (selected_setting == 14 && faults.count() > 0) {
@@ -340,21 +343,21 @@ void update_encoder() {
           10, 100);
       display.set_contrast(settings.oled_contrast_percent);
     } else if (selected_setting == 16) {
-      const uint8_t options[] = {0, 1, 5, 20, 30, 60};
+      const uint8_t options[] = {0, 1, 5, 10, 15, 20, 30, 60};
       uint8_t option = 0;
-      while (option < 5 &&
+      while (option < 7 &&
              options[option] != settings.display_timeout_min) option++;
-      int32_t next_option = (static_cast<int32_t>(option) + delta) % 6;
-      if (next_option < 0) next_option += 6;
+      int32_t next_option = (static_cast<int32_t>(option) + delta) % 8;
+      if (next_option < 0) next_option += 8;
       settings.display_timeout_min = options[next_option];
     }
     mark_settings_dirty();
   }
   if (button_down) {
     // Alarm acknowledgement has priority over all menu button actions.
-    if (alarm_active) {
-      alarm_snooze_until_ms = millis() + hw::kAlarmSnoozeMs;
-      alarm_active = false;
+    if (alarm_visual_active) {
+      alarm_acknowledged = true;
+      alarm_visual_active = false;
       noTone(hw::kBuzzerPin);
     } else if (assignment_mode && temperatures.detected_count() == 0) {
       assignment_mode = false;
@@ -368,18 +371,14 @@ void update_encoder() {
       }
       assigned_rom[assignment_role] = selected_rom;
       save_settings();
-      assignment_role++;
-      if (assignment_role >= 3) {
-        assignment_mode = false;
-        assignment_role = 0;
-        selected_setting = 0;
-      }
-    } else if (selected_setting == 17) {
+      assignment_mode = false;
+      assignment_sensor = 0;
+    } else if (selected_setting >= 17 && selected_setting <= 19) {
       assignment_mode = true;
-      assignment_role = 0;
+      assignment_role = selected_setting - 17;
       assignment_sensor = 0;
     } else {
-      selected_setting = (selected_setting + 1) % 18;
+      selected_setting = (selected_setting + 1) % kSettingCount;
     }
   }
 }
@@ -390,7 +389,7 @@ void update_display() {
     applied_oled_contrast_percent = settings.oled_contrast_percent;
   }
   if (display_awake && settings.display_timeout_min != 0 &&
-      !alarm_condition_present &&
+      !alarm_visual_active &&
       millis() - last_display_activity_ms >=
           static_cast<uint32_t>(settings.display_timeout_min) * 60UL * 1000UL) {
     display_awake = false;
@@ -417,7 +416,7 @@ void update_display() {
                      &settings,
                      &control_output,
                      display_fahrenheit,
-                     alarm_active,
+                     alarm_visual_active,
                      critical_probe_alarm,
                      assignment_mode,
                      menu_active,
@@ -451,6 +450,15 @@ void setup_signalk() {
       "notifications.fridge.sensorFault", "/Fridge/SensorFault");
   sk_alarm = std::make_shared<SKOutput<bool>>(
       "notifications.fridge.temperatureAlarm", "/Fridge/TemperatureAlarm");
+  for (uint8_t sensor = 0; sensor < temperatures.detected_count(); ++sensor) {
+    const String number(sensor + 1);
+    const String base_path =
+        String("environment.inside.refrigerator.detectedProbe") + number;
+    sk_detected_temp[sensor] =
+        std::make_shared<SKOutput<float>>(base_path + ".temperature");
+    sk_detected_rom[sensor] =
+        std::make_shared<SKOutput<String>>(base_path + ".rom");
+  }
 }
 
 }  // namespace
@@ -485,13 +493,16 @@ void setup() {
   display.set_contrast(settings.oled_contrast_percent);
   applied_oled_contrast_percent = settings.oled_contrast_percent;
   last_display_activity_ms = millis();
-  if (temperatures.begin(assigned_rom)) save_settings();
+  temperatures.begin();
 
   setup_signalk();
   sensesp_app->start();
   splash_started_ms = millis();
   display.draw_splash(vessel_name.c_str(), hw::kFirmwareVersion,
-                      temperatures.detected_count(), 30);
+                      temperatures.detected_count(), 15);
+  // The splash doubles as a physical fan-output test.
+  write_fan(hw::kSpilloverFanPin, true);
+  write_fan(hw::kCirculationFanPin, true);
 }
 
 void loop() {
@@ -500,6 +511,9 @@ void loop() {
   event_loop()->tick();
   const uint32_t now = millis();
   if (splash_active) {
+    // Keep temperature acquisition and Signal K publication alive while the
+    // fan-test splash owns the physical fan outputs.
+    read_temperatures();
     const uint32_t elapsed = now - splash_started_ms;
     if (elapsed < hw::kSplashDurationMs) {
       if (now - last_display_ms >= hw::kDisplayPeriodMs) {
