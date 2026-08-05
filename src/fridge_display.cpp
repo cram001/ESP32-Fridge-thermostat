@@ -4,7 +4,7 @@
 #include "fridge_display.h"
 
 namespace {
-constexpr uint8_t kSettingCount = 18;
+constexpr uint8_t kSettingCount = 19;
 }
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
@@ -142,7 +142,7 @@ void FridgeDisplay::draw_assignment(int x, int y,
   oled_.drawStr(x, y + 10, line);
   if (model.detected_count == 0) {
     oled_.drawStr(x, y + 28, "No sensors detected");
-    oled_.drawStr(x, y + 44, "Check bus and reset");
+    oled_.drawStr(x, y + 44, "Press button to exit");
     return;
   }
   snprintf(line, sizeof(line), "Probe %u of %u", model.assignment_sensor + 1,
@@ -200,11 +200,17 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   oled_.drawStr(x + 126 - ambient_w, y + 11, ambient_text);
 
   oled_.setFont(u8g2_font_6x10_tf);
-  oled_.drawStr(x + 2, y + 19, "FRZ");
-  oled_.drawStr(x + 66, y + 19, "FRDG");
-
-  draw_hero_temperature(x + 2, y + 42, model.role_temp_c[1], model.fahrenheit);
-  draw_hero_temperature(x + 66, y + 42, model.role_temp_c[0], model.fahrenheit);
+  if (model.settings->swap_fridge_freezer) {
+    oled_.drawStr(x + 2, y + 19, "FRDG");
+    oled_.drawStr(x + 66, y + 19, "FRZ");
+    draw_hero_temperature(x + 2, y + 42, model.role_temp_c[0], model.fahrenheit);
+    draw_hero_temperature(x + 66, y + 42, model.role_temp_c[1], model.fahrenheit);
+  } else {
+    oled_.drawStr(x + 2, y + 19, "FRZ");
+    oled_.drawStr(x + 66, y + 19, "FRDG");
+    draw_hero_temperature(x + 2, y + 42, model.role_temp_c[1], model.fahrenheit);
+    draw_hero_temperature(x + 66, y + 42, model.role_temp_c[0], model.fahrenheit);
+  }
 
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
@@ -314,6 +320,10 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
       snprintf(t.value, sizeof(t.value), "%um",
                model.settings->display_timeout_min);
     }
+  } else if (model.selected_setting == 17) {
+    t.name = "Swap sides";
+    snprintf(t.value, sizeof(t.value), "%s",
+             model.settings->swap_fridge_freezer ? "ON" : "OFF");
   } else {
     t.name = "Assign sensors";
     t.value[0] = '\0';
@@ -395,7 +405,7 @@ void FridgeDisplay::draw(const DisplayModel& model) {
   // fault (alarm banner, error browser) so it only overlays home/menu.
   if (!model.alarm_active && !showing_errors && !model.assignment_mode &&
       model.fault_count > 0) {
-    if (millis() % 2000UL < 650UL) draw_warning_triangle(x + 116, y + 1);
+    if (millis() % 2000UL < 650UL) draw_warning_triangle(x + 22, y + 1);
   }
   oled_.sendBuffer();
 }

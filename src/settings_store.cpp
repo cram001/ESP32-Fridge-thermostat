@@ -30,6 +30,7 @@ bool SettingsStore::to_json(JsonObject& root) {
   root["buzzer_enabled"] = settings_.buzzer_enabled;
   root["oled_contrast_percent"] = settings_.oled_contrast_percent;
   root["display_timeout_min"] = settings_.display_timeout_min;
+  root["swap_fridge_freezer"] = settings_.swap_fridge_freezer;
   root["fahrenheit"] = fahrenheit_;
   root["fridge_calibration_c"] = calibration_c_[0];
   root["freezer_calibration_c"] = calibration_c_[1];
@@ -66,6 +67,8 @@ bool SettingsStore::from_json(const JsonObject& root) {
   settings_.buzzer_enabled = root["buzzer_enabled"] | settings_.buzzer_enabled;
   settings_.oled_contrast_percent = constrain(
       root["oled_contrast_percent"] | settings_.oled_contrast_percent, 10, 100);
+  settings_.swap_fridge_freezer =
+      root["swap_fridge_freezer"] | settings_.swap_fridge_freezer;
   const uint8_t display_timeout =
       root["display_timeout_min"] | settings_.display_timeout_min;
   settings_.display_timeout_min =
@@ -112,6 +115,7 @@ const String ConfigSchema(const SettingsStore&) {
       "buzzer_enabled":{"title":"Buzzer enabled","type":"boolean"},
       "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","minimum":10,"maximum":100,"multipleOf":10},
       "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":[0,1,5,20,30,60]},
+      "swap_fridge_freezer":{"title":"Swap freezer/fridge display sides","type":"boolean"},
       "fahrenheit":{"title":"Display temperatures in Fahrenheit","type":"boolean"},
       "fridge_calibration_c":{"title":"Fridge calibration offset (C)","type":"number","minimum":-5,"maximum":5,"multipleOf":0.1},
       "freezer_calibration_c":{"title":"Freezer calibration offset (C)","type":"number","minimum":-5,"maximum":5,"multipleOf":0.1},

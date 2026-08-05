@@ -21,6 +21,7 @@ struct ControllerSettings {
   bool buzzer_enabled = true;
   uint8_t oled_contrast_percent = 50;
   uint8_t display_timeout_min = 0;
+  bool swap_fridge_freezer = false;
 };
 
 // Desired output state returned to main.cpp; these are commands, not proof

@@ -17,6 +17,8 @@ constexpr bool kFanActiveHigh = true;
 constexpr uint8_t kI2cSdaPin = 21;
 constexpr uint8_t kI2cSclPin = 22;
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
+constexpr uint8_t kEncoderGainCoefficient = 0;  // 0 attempts to disable the encoder LED ring
+constexpr uint8_t kEncoderCountsPerStep = 2;   // normalize 1-2 raw encoder counts to one UI step
 
 // Safety and fault qualification intervals.
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
@@ -45,7 +47,7 @@ constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderButtonGuardMs = 750;
 constexpr uint32_t kEncoderContinuousLimitMs = 10UL * 1000UL;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
-constexpr int32_t kEncoderMaxDeltaPerPoll = 8;
+constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;
