@@ -60,7 +60,7 @@ void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
   char status[18];
   snprintf(status, sizeof(status), "PROBES %u", detected_count);
   oled_.drawStr(2, 63, status);
-  oled_.drawStr(54, 63, "FANS OFF");
+  oled_.drawStr(54, 63, "FANS ON");
   snprintf(status, sizeof(status), "%us", seconds_remaining);
   const int countdown_width = oled_.getStrWidth(status);
   oled_.drawStr(127 - countdown_width, 63, status);

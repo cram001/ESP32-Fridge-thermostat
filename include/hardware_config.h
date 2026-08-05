@@ -47,9 +47,9 @@ constexpr uint32_t kEncoderContinuousLimitMs = 10UL * 1000UL;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
 constexpr int32_t kEncoderMaxDeltaPerPoll = 8;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
-constexpr uint32_t kSplashDurationMs = 30UL * 1000UL;
+constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;
 
-constexpr char kFirmwareVersion[] = "v1.0.0";
+constexpr char kFirmwareVersion[] = "v0.1.0";
 
 }  // namespace hw

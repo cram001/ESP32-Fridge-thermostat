@@ -509,8 +509,10 @@ void setup() {
   setup_signalk();
   sensesp_app->start();
   splash_started_ms = millis();
+  write_fan(hw::kSpilloverFanPin, true);
+  write_fan(hw::kCirculationFanPin, true);
   display.draw_splash(vessel_name.c_str(), hw::kFirmwareVersion,
-                      temperatures.detected_count(), 30);
+                      temperatures.detected_count(), 15);
 }
 
 // Cooperative scheduler: SensESP gets every tick, while control and display
@@ -533,6 +535,8 @@ void loop() {
       return;
     }
     splash_active = false;
+    write_fan(hw::kSpilloverFanPin, false);
+    write_fan(hw::kCirculationFanPin, false);
     if (encoder_available) {
       last_encoder_position = encoder.getEncoderValue();
       encoder.detectButtonDown();  // discard presses made during the splash
