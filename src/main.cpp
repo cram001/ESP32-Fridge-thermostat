@@ -17,9 +17,6 @@ using namespace sensesp;
 
 namespace {
 
-// main.cpp coordinates the hardware-facing modules. Sensor discovery,
-// persistence, display rendering, and thermostat decisions live in their own
-// classes so the loop below remains a readable schedule of system activity.
 DFRobot_VisualRotaryEncoder_I2C encoder(hw::kEncoderAddress, &Wire);
 ControllerSettings settings;
 float calibration_c[3] = {0.0f, 0.0f, 0.0f};
@@ -61,7 +58,10 @@ bool display_awake = true;
 uint8_t applied_oled_contrast_percent = 0;
 uint32_t last_menu_activity_ms = 0;
 constexpr uint32_t kMenuActivityTimeoutMs = 10UL * 1000UL;
-constexpr uint8_t kSettingCount = 20;
+constexpr uint8_t kSettingCount = 21;
+constexpr uint8_t kLayoutSetting = 17;
+constexpr uint8_t kFirstAssignmentSetting = 18;
+constexpr uint8_t kLastAssignmentSetting = 20;
 uint32_t splash_started_ms = 0;
 bool splash_active = true;
 bool settings_dirty = false;
@@ -80,16 +80,16 @@ std::shared_ptr<SKOutput<bool>> sk_circulation;
 std::shared_ptr<SKOutput<bool>> sk_lockout;
 std::shared_ptr<SKOutput<bool>> sk_fault;
 std::shared_ptr<SKOutput<bool>> sk_alarm;
-std::shared_ptr<SKOutput<float>> sk_detected_temp[TemperatureManager::kMaxSensors];
-std::shared_ptr<SKOutput<String>> sk_detected_rom[TemperatureManager::kMaxSensors];
+std::shared_ptr<SKOutput<float>>
+    sk_detected_temp[TemperatureManager::kMaxSensors];
+std::shared_ptr<SKOutput<String>>
+    sk_detected_rom[TemperatureManager::kMaxSensors];
 
 void write_fan(uint8_t pin, bool on) {
   digitalWrite(pin, on == hw::kFanActiveHigh ? HIGH : LOW);
 }
 
-void load_settings() {
-  settings_store->load();
-}
+void load_settings() { settings_store->load(); }
 
 void save_settings() {
   settings_store->save();
@@ -109,9 +109,8 @@ void save_settings_when_idle() {
 }
 
 void read_temperatures() {
-  // poll() is non-blocking and paces its own conversion requests against
-  // hw::kTemperaturePeriodMs, so this can safely run every loop() tick.
-  if (!temperatures.poll(assigned_rom, calibration_c, hw::kTemperaturePeriodMs)) {
+  if (!temperatures.poll(assigned_rom, calibration_c,
+                         hw::kTemperaturePeriodMs)) {
     return;
   }
   fridge_c = temperatures.role_temperature(0);
@@ -119,7 +118,6 @@ void read_temperatures() {
   ambient_c = temperatures.role_temperature(2);
   temperature_sample_ready = true;
 
-  // Signal K temperatures use kelvin.
   sk_fridge->set(std::isfinite(fridge_c) ? fridge_c + 273.15f : NAN);
   sk_freezer->set(std::isfinite(freezer_c) ? freezer_c + 273.15f : NAN);
   sk_ambient->set(std::isfinite(ambient_c) ? ambient_c + 273.15f : NAN);
@@ -132,14 +130,13 @@ void read_temperatures() {
 }
 
 void update_controller() {
-  // Do not interpret the initial NAN placeholders as a failed fridge probe.
-  // Outputs were latched OFF in setup and stay there until the first bus poll.
   if (!temperature_sample_ready) return;
   const uint32_t now = millis();
   using Status = TemperatureManager::SensorStatus;
   const Status fridge_status = temperatures.role_status(0);
   const Status freezer_status = temperatures.role_status(1);
   const Status ambient_status = temperatures.role_status(2);
+
   faults.set(FaultCode::kFridgeMissing, fridge_status == Status::kMissing);
   faults.set(FaultCode::kFridgeRange, fridge_status == Status::kOutOfRange);
   faults.set(FaultCode::kFreezerMissing, freezer_status == Status::kMissing);
@@ -152,13 +149,9 @@ void update_controller() {
       (!sensesp_app || !sensesp_app->get_ws_client()->is_connected());
   faults.set(FaultCode::kSignalKOffline, sk_offline);
 
-  // The normal controller owns hysteresis, lockout, and start-delay state.
   control_output = controller.update(fridge_c, freezer_c, settings,
                                      hw::kHysteresisC);
 
-  // A failed fridge probe requires an explicit get-me-home duty-cycle setting.
-  // A missing freezer probe is intentionally ignored; if it is providing a
-  // valid reading, however, its normal warm-freezer lockout still applies.
   if (fridge_status != Status::kOk) {
     control_output.spillover = emergency_spillover_controller.update(
         now, true, freezer_status == Status::kOk, freezer_c, settings);
@@ -185,16 +178,17 @@ void update_controller() {
 
   const bool reached_safe_temperature =
       fridge_status == Status::kOk && fridge_c < settings.fridge_alarm_c &&
-      (freezer_status != Status::kOk || freezer_c < settings.freezer_alarm_c);
+      (freezer_status != Status::kOk ||
+       freezer_c < settings.freezer_alarm_c);
   if (reached_safe_temperature || now >= hw::kStartupAlarmGraceMs) {
     temperature_alarm_armed = true;
   }
   const bool temperature_alarm_condition = temperature_alarm_armed &&
       ((std::isfinite(fridge_c) && fridge_c >= settings.fridge_alarm_c) ||
-       (std::isfinite(freezer_c) && freezer_c >= settings.freezer_alarm_c));
+       (std::isfinite(freezer_c) &&
+        freezer_c >= settings.freezer_alarm_c));
   critical_probe_alarm = fridge_status != Status::kOk;
-  alarm_condition_present = temperature_alarm_condition ||
-                            critical_probe_alarm;
+  alarm_condition_present = temperature_alarm_condition || critical_probe_alarm;
   if (!alarm_condition_present) {
     alarm_active = false;
     alarm_acknowledged = false;
@@ -215,20 +209,29 @@ void update_controller() {
   sk_alarm->set(alarm_active);
 }
 
+int32_t normalized_encoder_delta(int32_t current_position) {
+  int32_t raw_delta = current_position - last_encoder_position;
+  if (raw_delta > 512) raw_delta -= 1024;
+  if (raw_delta < -512) raw_delta += 1024;
+  last_encoder_position = current_position;
+
+  // SEN0502 firmware revisions differ in whether gain scales the count or only
+  // the LED indication. Accept both behaviours: 51-count steps become one
+  // detent, while native one-count steps remain one detent.
+  if (abs(raw_delta) >= hw::kEncoderGain) {
+    return raw_delta / static_cast<int32_t>(hw::kEncoderGain);
+  }
+  return raw_delta;
+}
+
 void update_encoder() {
   if (!encoder_available) return;
   const int32_t position = encoder.getEncoderValue();
-  int32_t delta = position - last_encoder_position;
-  // SEN0502 count wraps at 1024.
-  if (delta > 512) delta -= 1024;
-  if (delta < -512) delta += 1024;
-  last_encoder_position = position;
+  const int32_t delta = normalized_encoder_delta(position);
   const bool raw_button_down = encoder.detectButtonDown();
   const uint32_t now = millis();
   const bool raw_activity = delta != 0 || raw_button_down;
 
-  // Contain corrupted I2C readings or a module that continuously generates
-  // input. Normal operation resumes after two quiet seconds.
   if (encoder_input_locked) {
     if (raw_activity) {
       encoder_quiet_started_ms = 0;
@@ -267,26 +270,30 @@ void update_encoder() {
     last_button_event_ms = now;
     encoder_button_ready = false;
   }
+
   if ((delta != 0 || button_down) && !display_awake) {
     display_awake = true;
-    last_display_activity_ms = millis();
+    last_display_activity_ms = now;
     last_menu_activity_ms = 0;
     display.set_enabled(true);
     return;
   }
   if (delta != 0 || button_down) {
-    last_display_activity_ms = millis();
-    if (!alarm_visual_active && !assignment_mode) last_menu_activity_ms = millis();
+    last_display_activity_ms = now;
+    if (!alarm_visual_active && !assignment_mode) {
+      last_menu_activity_ms = now;
+    }
   }
+
   if (delta != 0) {
-    // Rotation selects a physical probe during assignment; otherwise it edits
-    // whichever normal settings item is currently shown on the OLED.
     if (assignment_mode && temperatures.detected_count() > 0) {
       assignment_sensor =
           (assignment_sensor + delta + temperatures.detected_count() * 8) %
           temperatures.detected_count();
     } else if (selected_setting <= 4) {
-      const float step_c = display_fahrenheit ? (0.5f / 1.8f) : 0.5f;
+      const float step_c = display_fahrenheit
+                               ? hw::kTemperatureEditStepC / 1.8f
+                               : hw::kTemperatureEditStepC;
       if (selected_setting == 0) {
         settings.high_c = constrain(
             settings.high_c + delta * step_c,
@@ -316,7 +323,6 @@ void update_encoder() {
     } else if (selected_setting == 5) {
       display_fahrenheit = !display_fahrenheit;
     } else if (selected_setting <= 8) {
-      // Calibration is stored in Celsius but edited in the displayed unit.
       const uint8_t role = selected_setting - 6;
       float shown_offset = display_fahrenheit
                                ? calibration_c[role] * 1.8f
@@ -341,7 +347,9 @@ void update_encoder() {
       const uint8_t options[] = {0, 5, 10, 20, 30, 40};
       uint8_t option = 0;
       while (option < 5 &&
-             options[option] != settings.emergency_spillover_on_min) option++;
+             options[option] != settings.emergency_spillover_on_min) {
+        option++;
+      }
       int32_t next_option = (static_cast<int32_t>(option) + delta) % 6;
       if (next_option < 0) next_option += 6;
       settings.emergency_spillover_on_min = options[next_option];
@@ -359,30 +367,30 @@ void update_encoder() {
       const uint8_t options[] = {0, 1, 5, 10, 15, 20, 30, 60};
       uint8_t option = 0;
       while (option < 7 &&
-             options[option] != settings.display_timeout_min) option++;
+             options[option] != settings.display_timeout_min) {
+        option++;
+      }
       int32_t next_option = (static_cast<int32_t>(option) + delta) % 8;
       if (next_option < 0) next_option += 8;
       settings.display_timeout_min = options[next_option];
+    } else if (selected_setting == kLayoutSetting) {
+      settings.fridge_on_left = !settings.fridge_on_left;
     }
     mark_settings_dirty();
   }
+
   if (button_down) {
-    // Alarm acknowledgement has priority over all menu button actions.
     if (alarm_visual_active) {
       alarm_acknowledged = true;
       alarm_visual_active = false;
       noTone(hw::kBuzzerPin);
     } else if (assignment_mode && temperatures.detected_count() == 0) {
-      // Do not trap the user on a role-assignment page when the 1-Wire bus is
-      // empty. Exit assignment and advance to the next menu item so another
-      // press cannot immediately re-enter the same empty page.
       assignment_mode = false;
       assignment_sensor = 0;
       selected_setting = (selected_setting + 1) % kSettingCount;
       last_menu_activity_ms = now;
     } else if (assignment_mode && temperatures.detected_count() > 0) {
       const String selected_rom = temperatures.detected_rom(assignment_sensor);
-      // A physical sensor may belong to only one logical location.
       for (uint8_t role = 0; role < 3; ++role) {
         if (role != assignment_role &&
             assigned_rom[role].equalsIgnoreCase(selected_rom)) {
@@ -393,15 +401,14 @@ void update_encoder() {
       save_settings();
       assignment_mode = false;
       assignment_sensor = 0;
-    } else if (selected_setting >= 17 && selected_setting <= 19) {
+    } else if (selected_setting >= kFirstAssignmentSetting &&
+               selected_setting <= kLastAssignmentSetting) {
       if (temperatures.detected_count() == 0) {
-        // Skip unavailable assignment actions instead of entering a dead-end
-        // setup screen. The display remains in the normal settings carousel.
         selected_setting = (selected_setting + 1) % kSettingCount;
         last_menu_activity_ms = now;
       } else {
         assignment_mode = true;
-        assignment_role = selected_setting - 17;
+        assignment_role = selected_setting - kFirstAssignmentSetting;
         assignment_sensor = 0;
       }
     } else {
@@ -418,13 +425,13 @@ void update_display() {
   if (display_awake && settings.display_timeout_min != 0 &&
       !alarm_visual_active &&
       millis() - last_display_activity_ms >=
-          static_cast<uint32_t>(settings.display_timeout_min) * 60UL * 1000UL) {
+          static_cast<uint32_t>(settings.display_timeout_min) *
+              60UL * 1000UL) {
     display_awake = false;
     display.set_enabled(false);
   }
   if (!display_awake) return;
-  // Build a read-only snapshot so the display module does not depend on or
-  // mutate controller globals.
+
   const float role_temps[] = {fridge_c, freezer_c, ambient_c};
   const uint8_t count = temperatures.detected_count();
   const float assignment_temp =
@@ -438,6 +445,7 @@ void update_display() {
       sensesp_app && sensesp_app->get_ws_client()->is_connected();
   const bool menu_active = last_menu_activity_ms != 0 &&
       millis() - last_menu_activity_ms < kMenuActivityTimeoutMs;
+
   DisplayModel model{role_temps,
                      calibration_c,
                      &settings,
@@ -492,7 +500,6 @@ void setup_signalk() {
 
 void setup() {
   SetupLogging(ESP_LOG_INFO);
-  // Load the inactive level into each output latch before enabling the pin.
   digitalWrite(hw::kSpilloverFanPin, hw::kFanActiveHigh ? LOW : HIGH);
   digitalWrite(hw::kCirculationFanPin, hw::kFanActiveHigh ? LOW : HIGH);
   pinMode(hw::kSpilloverFanPin, OUTPUT);
@@ -502,20 +509,17 @@ void setup() {
   write_fan(hw::kSpilloverFanPin, false);
   write_fan(hw::kCirculationFanPin, false);
 
-  // Creating the SensESP app mounts the filesystem used by FileSystemSaveable.
   SensESPAppBuilder builder;
   sensesp_app = builder.set_hostname("fridge-controller")->get_app();
   ConfigItem(settings_store)
       ->set_title("Fridge Controller")
       ->set_description(
-          "Thermostat, alarms, fan timing, calibration, and sensor assignments")
+          "Thermostat, alarms, fan timing, display layout, calibration, and sensor assignments")
       ->set_sort_order(500);
   load_settings();
   Wire.begin(hw::kI2cSdaPin, hw::kI2cSclPin);
   encoder_available = encoder.begin() == NO_ERR;
   if (encoder_available) {
-    // The SEN0502 LEDs are a monochrome position display, not an RGB status
-    // ring. Gain 51 makes one LED step visible for each encoder detent.
     encoder.setGainCoefficient(hw::kEncoderGain);
     encoder.setEncoderValue(hw::kEncoderInitialValue);
     last_encoder_position = encoder.getEncoderValue();
@@ -529,21 +533,18 @@ void setup() {
   setup_signalk();
   sensesp_app->start();
   splash_started_ms = millis();
+  const uint8_t splash_seconds = static_cast<uint8_t>(
+      (hw::kSplashDurationMs + 999UL) / 1000UL);
   display.draw_splash(vessel_name.c_str(), hw::kFirmwareVersion,
-                      temperatures.detected_count(), 15);
-  // The splash doubles as a physical fan-output test.
+                      temperatures.detected_count(), splash_seconds);
   write_fan(hw::kSpilloverFanPin, true);
   write_fan(hw::kCirculationFanPin, true);
 }
 
 void loop() {
-  // SensESP networking and these three periodic jobs share a cooperative loop;
-  // none of the schedules below intentionally block or use delay().
   event_loop()->tick();
   const uint32_t now = millis();
   if (splash_active) {
-    // Keep temperature acquisition and Signal K publication alive while the
-    // fan-test splash owns the physical fan outputs.
     read_temperatures();
     const uint32_t elapsed = now - splash_started_ms;
     if (elapsed < hw::kSplashDurationMs) {
@@ -556,10 +557,16 @@ void loop() {
       }
       return;
     }
+
     splash_active = false;
+    // End the physical output test deterministically before normal control.
+    write_fan(hw::kSpilloverFanPin, false);
+    write_fan(hw::kCirculationFanPin, false);
+    control_output.spillover = false;
+    control_output.circulation = false;
     if (encoder_available) {
       last_encoder_position = encoder.getEncoderValue();
-      encoder.detectButtonDown();  // discard presses made during the splash
+      encoder.detectButtonDown();
     }
     last_control_ms = now;
     last_display_ms = now;
@@ -569,8 +576,7 @@ void loop() {
     update_display();
     return;
   }
-  // Non-blocking: paces its own conversion requests against
-  // hw::kTemperaturePeriodMs internally, so it's safe to call every tick.
+
   read_temperatures();
   if (now - last_control_ms >= hw::kControlPeriodMs) {
     last_control_ms = now;
