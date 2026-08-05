@@ -415,6 +415,8 @@ void update_encoder() {
         assignment_mode = true;
         assignment_role = 0;
         assignment_sensor = 0;
+      } else {
+        selected_setting = (selected_setting + 1) % 19;
       }
     } else {
       selected_setting = (selected_setting + 1) % 19;
