@@ -16,6 +16,8 @@ constexpr bool kFanActiveHigh = true;
 constexpr uint8_t kI2cSdaPin = 21;  // SDA
 constexpr uint8_t kI2cSclPin = 22;  // SCL
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
+constexpr uint8_t kEncoderGain = 51;
+constexpr uint16_t kEncoderInitialValue = 0;
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
@@ -42,6 +44,18 @@ constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;
 
-constexpr char kFirmwareVersion[] = "v1.0.0";
+// User-editable temperature ranges and increments.
+constexpr float kTemperatureEditStepC = 0.1f;
+constexpr float kFridgeControlMinC = -5.0f;
+constexpr float kFridgeControlMaxC = 15.0f;
+constexpr float kFreezerThresholdMinC = -30.0f;
+constexpr float kFreezerThresholdMaxC = 10.0f;
+constexpr float kFridgeAlarmMinC = 0.0f;
+constexpr float kFridgeAlarmMaxC = 30.0f;
+constexpr float kFreezerAlarmMinC = -30.0f;
+constexpr float kFreezerAlarmMaxC = 10.0f;
+constexpr float kCalibrationLimitC = 5.0f;
+
+constexpr char kFirmwareVersion[] = "v1.0.1-dev";
 
 }  // namespace hw
