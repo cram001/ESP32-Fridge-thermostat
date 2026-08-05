@@ -56,6 +56,8 @@ constexpr float kFreezerAlarmMinC = -30.0f;
 constexpr float kFreezerAlarmMaxC = 10.0f;
 constexpr float kCalibrationLimitC = 5.0f;
 
-constexpr char kFirmwareVersion[] = "v1.0.1-dev";
+// Pre-release semantic version. Increment with each firmware change; v1.0.0
+// is reserved for the first stable release.
+constexpr char kFirmwareVersion[] = "v0.1.0";
 
 }  // namespace hw
