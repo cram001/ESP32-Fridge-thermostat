@@ -20,6 +20,8 @@ struct ControllerSettings {
   bool buzzer_enabled = true;
   uint8_t oled_contrast_percent = 50;
   uint8_t display_timeout_min = 0;
+  // Default preserves the original layout: freezer left, fridge right.
+  bool fridge_on_left = false;
 };
 
 struct ControllerOutput {
@@ -142,4 +144,5 @@ class EmergencySpilloverController {
   bool active_ = false;
   uint8_t applied_on_min_ = 0;
   uint32_t cycle_started_ms_ = 0;
+  uint8_t applied_on_min_ = 0;
 };
