@@ -4,29 +4,30 @@
 
 namespace hw {
 
-// DFRobot FireBeetle 2 ESP32-E N16R2 (DFR1139).
-constexpr uint8_t kOneWirePin = 4;
-constexpr uint8_t kSpilloverFanPin = 13;
-constexpr uint8_t kCirculationFanPin = 17;
-constexpr uint8_t kBuzzerPin = 19;
+// DFRobot FireBeetle 2 ESP32-E N16R2 (DFR1139) installed on the
+// DFR0923 terminal-block board. Comments include the DFR0923 screw-terminal
+// labels used during assembly.
+constexpr uint8_t kOneWirePin = 4;          // D12
+constexpr uint8_t kSpilloverFanPin = 17;   // D10
+constexpr uint8_t kCirculationFanPin = 13; // D7
+constexpr uint8_t kBuzzerPin = 19;          // MI (SPI MISO; unused by OLED)
 constexpr bool kFanActiveHigh = true;
 
-constexpr uint8_t kI2cSdaPin = 21;
-constexpr uint8_t kI2cSclPin = 22;
+constexpr uint8_t kI2cSdaPin = 21;  // SDA
+constexpr uint8_t kI2cSclPin = 22;  // SCL
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
 constexpr uint32_t kLongFanRunMs = 60UL * 60UL * 1000UL;
 
-// SSD1309 128x64 OLED, 4-wire SPI. The display manual labels SPI
-// clock/data as D0/SCK and D1/SDA; these map to the ESP32 VSPI SCK/MOSI
-// pins used by U8g2 hardware SPI.
-constexpr uint8_t kOledClockPin = 18;
-constexpr uint8_t kOledDataPin = 23;
-constexpr uint8_t kOledCsPin = 14;
-constexpr uint8_t kOledDcPin = 25;
-constexpr uint8_t kOledResetPin = 26;
+// SSD1309 128x64 OLED, 4-wire SPI. OLED silkscreen -> DFR0923 terminal:
+// SCK -> SCK, SDA (SPI MOSI) -> MO, RES -> D3, DC -> D2, CS -> D6.
+constexpr uint8_t kOledClockPin = 18;  // SCK
+constexpr uint8_t kOledDataPin = 23;   // MO
+constexpr uint8_t kOledCsPin = 14;     // D6
+constexpr uint8_t kOledDcPin = 25;     // D2
+constexpr uint8_t kOledResetPin = 26;  // D3
 
 constexpr uint16_t kBuzzerFrequencyHz = 2400;
 constexpr uint32_t kTemperaturePeriodMs = 30UL * 1000UL;
