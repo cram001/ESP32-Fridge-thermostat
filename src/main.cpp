@@ -510,7 +510,7 @@ void setup() {
   sensesp_app->start();
   splash_started_ms = millis();
   display.draw_splash(vessel_name.c_str(), hw::kFirmwareVersion,
-                      temperatures.detected_count(), 15);
+                      temperatures.detected_count(), 30);
 }
 
 // Cooperative scheduler: SensESP gets every tick, while control and display
