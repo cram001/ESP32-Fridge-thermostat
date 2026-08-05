@@ -144,5 +144,4 @@ class EmergencySpilloverController {
   bool active_ = false;
   uint8_t applied_on_min_ = 0;
   uint32_t cycle_started_ms_ = 0;
-  uint8_t applied_on_min_ = 0;
 };
