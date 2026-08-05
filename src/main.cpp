@@ -209,8 +209,9 @@ void update_controller() {
   }
   if (alarm_visual_active && settings.buzzer_enabled) {
     tone(hw::kBuzzerPin, hw::kBuzzerFrequencyHz);
+  } else {
+    noTone(hw::kBuzzerPin);
   }
-  else noTone(hw::kBuzzerPin);
   sk_alarm->set(alarm_active);
 }
 
@@ -287,20 +288,30 @@ void update_encoder() {
     } else if (selected_setting <= 4) {
       const float step_c = display_fahrenheit ? (0.5f / 1.8f) : 0.5f;
       if (selected_setting == 0) {
-        settings.high_c = constrain(settings.high_c + delta * step_c,
-                                    settings.low_c + hw::kHysteresisC, 30.0f);
+        settings.high_c = constrain(
+            settings.high_c + delta * step_c,
+            settings.low_c + hw::kHysteresisC,
+            hw::kFridgeControlMaxC);
       } else if (selected_setting == 1) {
-        settings.low_c = constrain(settings.low_c + delta * step_c, -40.0f,
-                                   settings.high_c - hw::kHysteresisC);
+        settings.low_c = constrain(
+            settings.low_c + delta * step_c,
+            hw::kFridgeControlMinC,
+            settings.high_c - hw::kHysteresisC);
       } else if (selected_setting == 2) {
         settings.freezer_lockout_c = constrain(
-            settings.freezer_lockout_c + delta * step_c, -40.0f, 20.0f);
+            settings.freezer_lockout_c + delta * step_c,
+            hw::kFreezerThresholdMinC,
+            hw::kFreezerThresholdMaxC);
       } else if (selected_setting == 3) {
         settings.fridge_alarm_c = constrain(
-            settings.fridge_alarm_c + delta * step_c, -20.0f, 40.0f);
+            settings.fridge_alarm_c + delta * step_c,
+            hw::kFridgeAlarmMinC,
+            hw::kFridgeAlarmMaxC);
       } else {
         settings.freezer_alarm_c = constrain(
-            settings.freezer_alarm_c + delta * step_c, -40.0f, 20.0f);
+            settings.freezer_alarm_c + delta * step_c,
+            hw::kFreezerAlarmMinC,
+            hw::kFreezerAlarmMaxC);
       }
     } else if (selected_setting == 5) {
       display_fahrenheit = !display_fahrenheit;
@@ -310,7 +321,9 @@ void update_encoder() {
       float shown_offset = display_fahrenheit
                                ? calibration_c[role] * 1.8f
                                : calibration_c[role];
-      const float shown_limit = display_fahrenheit ? 9.0f : 5.0f;
+      const float shown_limit = display_fahrenheit
+                                    ? hw::kCalibrationLimitC * 1.8f
+                                    : hw::kCalibrationLimitC;
       shown_offset = constrain(shown_offset + delta * 0.1f,
                                -shown_limit, shown_limit);
       calibration_c[role] = display_fahrenheit ? shown_offset / 1.8f
@@ -360,12 +373,19 @@ void update_encoder() {
       alarm_visual_active = false;
       noTone(hw::kBuzzerPin);
     } else if (assignment_mode && temperatures.detected_count() == 0) {
+      // Do not trap the user on a role-assignment page when the 1-Wire bus is
+      // empty. Exit assignment and advance to the next menu item so another
+      // press cannot immediately re-enter the same empty page.
       assignment_mode = false;
+      assignment_sensor = 0;
+      selected_setting = (selected_setting + 1) % kSettingCount;
+      last_menu_activity_ms = now;
     } else if (assignment_mode && temperatures.detected_count() > 0) {
       const String selected_rom = temperatures.detected_rom(assignment_sensor);
       // A physical sensor may belong to only one logical location.
       for (uint8_t role = 0; role < 3; ++role) {
-        if (role != assignment_role && assigned_rom[role].equalsIgnoreCase(selected_rom)) {
+        if (role != assignment_role &&
+            assigned_rom[role].equalsIgnoreCase(selected_rom)) {
           assigned_rom[role] = "";
         }
       }
@@ -374,9 +394,16 @@ void update_encoder() {
       assignment_mode = false;
       assignment_sensor = 0;
     } else if (selected_setting >= 17 && selected_setting <= 19) {
-      assignment_mode = true;
-      assignment_role = selected_setting - 17;
-      assignment_sensor = 0;
+      if (temperatures.detected_count() == 0) {
+        // Skip unavailable assignment actions instead of entering a dead-end
+        // setup screen. The display remains in the normal settings carousel.
+        selected_setting = (selected_setting + 1) % kSettingCount;
+        last_menu_activity_ms = now;
+      } else {
+        assignment_mode = true;
+        assignment_role = selected_setting - 17;
+        assignment_sensor = 0;
+      }
     } else {
       selected_setting = (selected_setting + 1) % kSettingCount;
     }
@@ -480,13 +507,17 @@ void setup() {
   sensesp_app = builder.set_hostname("fridge-controller")->get_app();
   ConfigItem(settings_store)
       ->set_title("Fridge Controller")
-      ->set_description("Thermostat, alarms, fan timing, calibration, and sensor assignments")
+      ->set_description(
+          "Thermostat, alarms, fan timing, calibration, and sensor assignments")
       ->set_sort_order(500);
   load_settings();
   Wire.begin(hw::kI2cSdaPin, hw::kI2cSclPin);
   encoder_available = encoder.begin() == NO_ERR;
   if (encoder_available) {
-    encoder.setGainCoefficient(1);
+    // The SEN0502 LEDs are a monochrome position display, not an RGB status
+    // ring. Gain 51 makes one LED step visible for each encoder detent.
+    encoder.setGainCoefficient(hw::kEncoderGain);
+    encoder.setEncoderValue(hw::kEncoderInitialValue);
     last_encoder_position = encoder.getEncoderValue();
   }
   display.begin();
