@@ -16,10 +16,8 @@ constexpr bool kFanActiveHigh = true;
 constexpr uint8_t kI2cSdaPin = 21;  // SDA
 constexpr uint8_t kI2cSclPin = 22;  // SCL
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
-// SEN0502 gain 51 advances the built-in position LEDs by one segment per
-// encoder detent. Gain 1 requires roughly 2.5 complete turns per LED segment.
 constexpr uint8_t kEncoderGain = 51;
-constexpr uint16_t kEncoderInitialValue = 51;
+constexpr uint16_t kEncoderInitialValue = 0;
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
@@ -33,19 +31,6 @@ constexpr uint8_t kOledCsPin = 14;     // D6
 constexpr uint8_t kOledDcPin = 25;     // D2
 constexpr uint8_t kOledResetPin = 26;  // D3
 
-// User-editable temperature limits. These are deliberately wider than normal
-// operating settings so the same firmware can support different spillover-box
-// layouts without allowing nonsensical DS18B20 extremes in the UI.
-constexpr float kFridgeControlMinC = -5.0f;
-constexpr float kFridgeControlMaxC = 15.0f;
-constexpr float kFreezerThresholdMinC = -30.0f;
-constexpr float kFreezerThresholdMaxC = 10.0f;
-constexpr float kFridgeAlarmMinC = 0.0f;
-constexpr float kFridgeAlarmMaxC = 30.0f;
-constexpr float kFreezerAlarmMinC = -30.0f;
-constexpr float kFreezerAlarmMaxC = 10.0f;
-constexpr float kCalibrationLimitC = 5.0f;
-
 constexpr uint16_t kBuzzerFrequencyHz = 2400;
 constexpr uint32_t kTemperaturePeriodMs = 30UL * 1000UL;
 constexpr uint32_t kControlPeriodMs = 250;
@@ -58,6 +43,18 @@ constexpr int32_t kEncoderMaxDeltaPerPoll = 8;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;
+
+// User-editable temperature ranges and increments.
+constexpr float kTemperatureEditStepC = 0.1f;
+constexpr float kFridgeControlMinC = -5.0f;
+constexpr float kFridgeControlMaxC = 15.0f;
+constexpr float kFreezerThresholdMinC = -30.0f;
+constexpr float kFreezerThresholdMaxC = 10.0f;
+constexpr float kFridgeAlarmMinC = 0.0f;
+constexpr float kFridgeAlarmMaxC = 30.0f;
+constexpr float kFreezerAlarmMinC = -30.0f;
+constexpr float kFreezerAlarmMaxC = 10.0f;
+constexpr float kCalibrationLimitC = 5.0f;
 
 constexpr char kFirmwareVersion[] = "v1.0.1-dev";
 
