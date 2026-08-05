@@ -26,6 +26,7 @@ bool SettingsStore::to_json(JsonObject& root) {
   root["buzzer_enabled"] = settings_.buzzer_enabled;
   root["oled_contrast_percent"] = settings_.oled_contrast_percent;
   root["display_timeout_min"] = settings_.display_timeout_min;
+  root["fridge_on_left"] = settings_.fridge_on_left;
   root["fahrenheit"] = fahrenheit_;
   root["fridge_calibration_c"] = calibration_c_[0];
   root["freezer_calibration_c"] = calibration_c_[1];
@@ -38,14 +39,21 @@ bool SettingsStore::to_json(JsonObject& root) {
 }
 
 bool SettingsStore::from_json(const JsonObject& root) {
-  settings_.high_c = constrain(root["high_c"] | settings_.high_c, -39.5f, 30.0f);
-  settings_.low_c = constrain(root["low_c"] | settings_.low_c, -40.0f, 30.0f);
+  settings_.high_c = constrain(root["high_c"] | settings_.high_c,
+                               hw::kFridgeControlMinC,
+                               hw::kFridgeControlMaxC);
+  settings_.low_c = constrain(root["low_c"] | settings_.low_c,
+                              hw::kFridgeControlMinC,
+                              hw::kFridgeControlMaxC);
   settings_.freezer_lockout_c = constrain(
-      root["freezer_lockout_c"] | settings_.freezer_lockout_c, -40.0f, 20.0f);
+      root["freezer_lockout_c"] | settings_.freezer_lockout_c,
+      hw::kFreezerThresholdMinC, hw::kFreezerThresholdMaxC);
   settings_.fridge_alarm_c = constrain(
-      root["fridge_alarm_c"] | settings_.fridge_alarm_c, -20.0f, 40.0f);
+      root["fridge_alarm_c"] | settings_.fridge_alarm_c,
+      hw::kFridgeAlarmMinC, hw::kFridgeAlarmMaxC);
   settings_.freezer_alarm_c = constrain(
-      root["freezer_alarm_c"] | settings_.freezer_alarm_c, -40.0f, 20.0f);
+      root["freezer_alarm_c"] | settings_.freezer_alarm_c,
+      hw::kFreezerAlarmMinC, hw::kFreezerAlarmMaxC);
   settings_.fan_delay_s = constrain(
       root["fan_delay_s"] | settings_.fan_delay_s, 5, 180);
   settings_.spillover_min_on_min = constrain(
@@ -72,13 +80,17 @@ bool SettingsStore::from_json(const JsonObject& root) {
               display_timeout == 60
           ? display_timeout
           : 0;
+  settings_.fridge_on_left = root["fridge_on_left"] | settings_.fridge_on_left;
   fahrenheit_ = root["fahrenheit"] | fahrenheit_;
   calibration_c_[0] = constrain(
-      root["fridge_calibration_c"] | calibration_c_[0], -5.0f, 5.0f);
+      root["fridge_calibration_c"] | calibration_c_[0],
+      -hw::kCalibrationLimitC, hw::kCalibrationLimitC);
   calibration_c_[1] = constrain(
-      root["freezer_calibration_c"] | calibration_c_[1], -5.0f, 5.0f);
+      root["freezer_calibration_c"] | calibration_c_[1],
+      -hw::kCalibrationLimitC, hw::kCalibrationLimitC);
   calibration_c_[2] = constrain(
-      root["ambient_calibration_c"] | calibration_c_[2], -5.0f, 5.0f);
+      root["ambient_calibration_c"] | calibration_c_[2],
+      -hw::kCalibrationLimitC, hw::kCalibrationLimitC);
   assigned_rom_[0] = root["fridge_rom"] | assigned_rom_[0];
   assigned_rom_[1] = root["freezer_rom"] | assigned_rom_[1];
   assigned_rom_[2] = root["ambient_rom"] | assigned_rom_[2];
@@ -105,7 +117,7 @@ bool SettingsStore::from_json(const JsonObject& root) {
   if (vessel_name_.length() > 24) vessel_name_.remove(24);
 
   // Never allow the low threshold to overlap the high threshold.
-  settings_.low_c = constrain(settings_.low_c, -40.0f,
+  settings_.low_c = constrain(settings_.low_c, hw::kFridgeControlMinC,
                               settings_.high_c - hw::kHysteresisC);
   return true;
 }
@@ -114,11 +126,11 @@ const String ConfigSchema(const SettingsStore&) {
   return R"JSON({
     "type":"object",
     "properties":{
-      "high_c":{"title":"Spillover ON temperature (C)","type":"number","minimum":-39.5,"maximum":30},
-      "low_c":{"title":"Circulation ON temperature (C)","type":"number","minimum":-40,"maximum":30},
-      "freezer_lockout_c":{"title":"Freezer lockout temperature (C)","type":"number","minimum":-40,"maximum":20},
-      "fridge_alarm_c":{"title":"Fridge alarm temperature (C)","type":"number","minimum":-20,"maximum":40},
-      "freezer_alarm_c":{"title":"Freezer alarm temperature (C)","type":"number","minimum":-40,"maximum":20},
+      "high_c":{"title":"Spillover ON temperature (C)","type":"number","minimum":-5,"maximum":15,"multipleOf":0.1},
+      "low_c":{"title":"Circulation ON temperature (C)","type":"number","minimum":-5,"maximum":15,"multipleOf":0.1},
+      "freezer_lockout_c":{"title":"Freezer lockout temperature (C)","type":"number","minimum":-30,"maximum":10,"multipleOf":0.1},
+      "fridge_alarm_c":{"title":"Fridge alarm temperature (C)","type":"number","minimum":0,"maximum":30,"multipleOf":0.1},
+      "freezer_alarm_c":{"title":"Freezer alarm temperature (C)","type":"number","minimum":-30,"maximum":10,"multipleOf":0.1},
       "fan_delay_s":{"title":"Fan trigger delay (seconds)","type":"integer","minimum":5,"maximum":180},
       "spillover_min_on_min":{"title":"Spillover minimum ON (minutes)","type":"integer","minimum":1,"maximum":5},
       "circulation_min_on_min":{"title":"Circulation minimum ON (minutes)","type":"integer","minimum":1,"maximum":5},
@@ -126,6 +138,7 @@ const String ConfigSchema(const SettingsStore&) {
       "buzzer_enabled":{"title":"Buzzer enabled","type":"boolean"},
       "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","minimum":10,"maximum":100,"multipleOf":10},
       "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":[0,1,5,10,15,20,30,60]},
+      "fridge_on_left":{"title":"Display fridge on left side","type":"boolean"},
       "fahrenheit":{"title":"Display temperatures in Fahrenheit","type":"boolean"},
       "fridge_calibration_c":{"title":"Fridge calibration offset (C)","type":"number","minimum":-5,"maximum":5,"multipleOf":0.1},
       "freezer_calibration_c":{"title":"Freezer calibration offset (C)","type":"number","minimum":-5,"maximum":5,"multipleOf":0.1},
