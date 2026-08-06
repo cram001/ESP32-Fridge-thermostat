@@ -232,13 +232,13 @@ uint8_t wrapped_index(uint8_t current, int32_t delta, uint8_t count) {
 
 void update_encoder() {
   if (!encoder_available) return;
-  const int32_t delta = read_encoder_delta();
+  const int32_t raw_delta = read_encoder_delta();
   const bool raw_button_down = encoder.detectButtonDown();
   if (raw_button_down) {
     encoder.setEncoderValue(hw::kEncoderNeutralValue);
   }
   const uint32_t now = millis();
-  const bool raw_activity = delta != 0 || raw_button_down;
+  const bool raw_activity = raw_delta != 0 || raw_button_down;
 
   if (encoder_input_locked) {
     if (raw_activity) {
@@ -252,11 +252,17 @@ void update_encoder() {
     }
     return;
   }
-  if (abs(delta) > hw::kEncoderMaxDeltaPerPoll) {
+  if (abs(raw_delta) > hw::kEncoderMaxDeltaPerPoll) {
     encoder_input_locked = true;
     encoder_quiet_started_ms = 0;
     return;
   }
+
+  // Treat one observed movement as one UI step. Some SEN0502 units report a
+  // clockwise detent as +1 but the matching counterclockwise detent as -2.
+  // Applying that raw count directly makes menu movement direction-dependent.
+  const int32_t delta =
+      raw_delta > 0 ? 1 : (raw_delta < 0 ? -1 : 0);
 
   if (!raw_button_down) encoder_button_ready = true;
   const bool button_down = raw_button_down && encoder_button_ready &&
