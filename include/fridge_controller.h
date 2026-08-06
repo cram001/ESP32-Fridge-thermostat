@@ -9,11 +9,11 @@ struct ControllerSettings {
   // All internal temperatures are Celsius, regardless of the selected display
   // unit. Signal K conversion to Kelvin happens at the publishing boundary.
   float high_c = 5.0f;
-  float low_c = 1.0f;
+  float low_c = 4.0f;
   float freezer_lockout_c = -5.0f;
   float fridge_alarm_c = 10.0f;
   float freezer_alarm_c = -2.0f;
-  uint16_t fan_delay_s = 30;
+  uint16_t fan_delay_s = 15;
   uint8_t spillover_min_on_min = 2;
   uint8_t circulation_min_on_min = 2;
   // Explicit get-me-home mode used only when the fridge probe has failed.
@@ -50,10 +50,13 @@ inline void NormalizeControllerSettings(ControllerSettings& settings) {
     settings.freezer_alarm_c = defaults.freezer_alarm_c;
   }
 
-  settings.high_c = constrain(settings.high_c, hw::kFridgeControlMinC,
-                              hw::kFridgeControlMaxC);
-  settings.low_c = constrain(settings.low_c, hw::kFridgeControlMinC,
-                             hw::kFridgeControlMaxC);
+  settings.high_c = constrain(
+      settings.high_c,
+      hw::kFridgeControlMinC + hw::kFridgeControlMinimumBandC,
+      hw::kFridgeControlMaxC);
+  settings.low_c =
+      constrain(settings.low_c, hw::kFridgeControlMinC,
+                settings.high_c - hw::kFridgeControlMinimumBandC);
   settings.freezer_lockout_c =
       constrain(settings.freezer_lockout_c, hw::kFreezerThresholdMinC,
                 hw::kFreezerThresholdMaxC);
@@ -99,11 +102,11 @@ struct ControllerOutput {
 
 class FridgeController {
  public:
-  // Called periodically. A start condition must remain true for fan_delay_s;
-  // stop thresholds and safety lockouts take effect without that delay.
+  // Called periodically. Start qualification advances only on fresh sensor
+  // samples, preventing one stored value from satisfying fan_delay_s.
   ControllerOutput update(float fridge_c, float freezer_c,
                           const ControllerSettings& settings,
-                          float hysteresis_c) {
+                          bool fresh_sample = true) {
     const bool fridge_valid = valid(fridge_c);
     const bool freezer_valid = valid(freezer_c);
     // A missing freezer probe disables only freezer lockout; fridge-based
@@ -111,57 +114,68 @@ class FridgeController {
     // duty-cycle fail-safe in main.cpp.
     output_.sensor_fault = !fridge_valid;
     output_.freezer_lockout = freezer_valid &&
-                              freezer_c > settings.freezer_lockout_c;
+                              freezer_c >= settings.freezer_lockout_c;
 
     const uint32_t now = millis();
     if (output_.sensor_fault || output_.freezer_lockout) {
-      // Fail safe: never pull warmer freezer air into the fridge when either
-      // required reading is unavailable or the freezer is above its lockout.
+      // A fridge fault disables normal thermostat control. A valid freezer
+      // reading at its lockout threshold immediately overrides minimum runtime.
       output_.spillover = false;
       spillover_pending_ = false;
     } else if (!output_.spillover && fridge_c >= settings.high_c) {
       // Start, or continue, the continuous-condition qualification timer.
-      if (!spillover_pending_) {
+      if (fresh_sample && !spillover_pending_) {
         spillover_pending_ = true;
         spillover_pending_since_ = now;
-      } else if (now - spillover_pending_since_ >=
+      } else if (fresh_sample && now - spillover_pending_since_ >=
                  static_cast<uint32_t>(settings.fan_delay_s) * 1000UL) {
         output_.spillover = true;
         spillover_started_at_ = now;
         spillover_pending_ = false;
       }
     } else if (output_.spillover &&
-               fridge_c <= settings.high_c - hysteresis_c &&
+               fridge_c <= settings.low_c &&
                now - spillover_started_at_ >=
                    static_cast<uint32_t>(settings.spillover_min_on_min) *
                        60UL * 1000UL) {
       output_.spillover = false;
-    } else if (!output_.spillover) {
+    } else if (!output_.spillover && fresh_sample) {
       spillover_pending_ = false;
     }
 
     if (!fridge_valid) {
       output_.circulation = false;
       circulation_pending_ = false;
-    } else if (!output_.circulation && fridge_c <= settings.low_c) {
-      // The circulation fan has an independent qualification timer.
-      if (!circulation_pending_) {
-        circulation_pending_ = true;
-        circulation_pending_since_ = now;
-      } else if (now - circulation_pending_since_ >=
-                 static_cast<uint32_t>(settings.fan_delay_s) * 1000UL) {
+    } else {
+      const bool cold_mix_requested = fridge_c <= settings.low_c;
+      const bool circulation_requested =
+          output_.spillover || cold_mix_requested;
+      if (!output_.circulation && output_.spillover) {
+        // Circulation follows spillover immediately so incoming freezer air is
+        // mixed throughout the fridge compartment.
         output_.circulation = true;
         circulation_started_at_ = now;
         circulation_pending_ = false;
+      } else if (!output_.circulation && cold_mix_requested) {
+        if (fresh_sample && !circulation_pending_) {
+          circulation_pending_ = true;
+          circulation_pending_since_ = now;
+        } else if (fresh_sample &&
+                   now - circulation_pending_since_ >=
+                       static_cast<uint32_t>(settings.fan_delay_s) * 1000UL) {
+          output_.circulation = true;
+          circulation_started_at_ = now;
+          circulation_pending_ = false;
+        }
+      } else if (output_.circulation && !circulation_requested &&
+                 now - circulation_started_at_ >=
+                     static_cast<uint32_t>(
+                         settings.circulation_min_on_min) *
+                         60UL * 1000UL) {
+        output_.circulation = false;
+      } else if (!output_.circulation && fresh_sample) {
+        circulation_pending_ = false;
       }
-    } else if (output_.circulation &&
-               fridge_c >= settings.low_c + hysteresis_c &&
-               now - circulation_started_at_ >=
-                   static_cast<uint32_t>(settings.circulation_min_on_min) *
-                       60UL * 1000UL) {
-      output_.circulation = false;
-    } else if (!output_.circulation) {
-      circulation_pending_ = false;
     }
     return output_;
   }
@@ -198,7 +212,7 @@ class EmergencySpilloverController {
       applied_on_min_ = settings.emergency_spillover_on_min;
     }
     const bool freezer_allows_spillover =
-        !freezer_valid || freezer_c <= settings.freezer_lockout_c;
+        !freezer_valid || freezer_c < settings.freezer_lockout_c;
     const uint32_t on_ms = static_cast<uint32_t>(applied_on_min_) *
                            60UL * 1000UL;
     constexpr uint32_t kHourMs = 60UL * 60UL * 1000UL;

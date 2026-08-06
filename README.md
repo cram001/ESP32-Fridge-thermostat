@@ -9,6 +9,9 @@ fans; displays status on a 128x64 SSD1309 OLED; and publishes readings and state
 
 Total daily power consumption, with OLED always ON is less than 1 Ah (12VDC system).
 
+For complete installation, first-start, sensor-assignment, control, and menu
+instructions, see [Device setup and menu guide](docs/USER_GUIDE.md).
+
 ## Bring-up
 
 1. Verify every pin and output polarity in `include/hardware_config.h` before
@@ -45,8 +48,24 @@ revision is running.
 
 The freezer probe is optional for control. If it is missing, the fridge probe
 continues to control the spillover fan. If the freezer probe is present and its
-valid temperature is above the configured lockout, the spillover fan remains
+valid temperature is at or above the configured lockout, the spillover fan remains
 off. (avoids pushing too much warm air into the freezer, potentially thawing food while the compressor/evaporator kick in to remove the additional heat).
+
+## Fridge temperature control
+
+The displayed fridge, freezer, and ambient temperatures are rolling averages of
+six readings sampled about every five seconds. Normal fan control uses the
+filtered fridge temperature. Freezer lockout uses the latest valid freezer
+reading so it can stop spillover without waiting for the average.
+
+- At `Fridge max T`, a persistent warm condition starts spillover after the fan
+  trigger delay. Circulation starts with it.
+- At `Fridge min T`, spillover stops only after its configured minimum runtime
+  has elapsed. Reaching the freezer lockout is the temperature exception and
+  stops spillover immediately.
+- At or below `Fridge min T`, circulation can also start independently after
+  the fan trigger delay. Its own minimum runtime is enforced once it starts.
+- `Fridge min T` must remain at least 0.5 C below `Fridge max T`.
 
 ## Fridge-probe failure / get-me-home mode
 

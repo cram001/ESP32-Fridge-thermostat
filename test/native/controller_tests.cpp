@@ -23,10 +23,10 @@ void test_missing_freezer_is_optional() {
   FridgeController controller;
 
   g_fake_millis = 1000;
-  check(!controller.update(8.0f, NAN, settings, 0.5f).spillover,
+  check(!controller.update(8.0f, NAN, settings).spillover,
         "hot fridge begins qualification with missing freezer");
   g_fake_millis = 6000;
-  check(controller.update(8.0f, NAN, settings, 0.5f).spillover,
+  check(controller.update(8.0f, NAN, settings).spillover,
         "missing freezer does not prevent normal fridge control");
 }
 
@@ -36,12 +36,93 @@ void test_valid_warm_freezer_locks_out() {
   FridgeController controller;
 
   g_fake_millis = 1000;
-  controller.update(8.0f, -2.0f, settings, 0.5f);
+  controller.update(8.0f, -2.0f, settings);
   g_fake_millis = 7000;
   const ControllerOutput output =
-      controller.update(8.0f, -2.0f, settings, 0.5f);
+      controller.update(8.0f, -2.0f, settings);
   check(output.freezer_lockout, "valid warm freezer reports lockout");
   check(!output.spillover, "valid warm freezer prevents spillover");
+}
+
+void test_fresh_samples_qualify_spillover_start() {
+  ControllerSettings settings;
+  settings.fan_delay_s = 5;
+  FridgeController controller;
+
+  g_fake_millis = 1000;
+  controller.update(8.0f, -10.0f, settings, true);
+  g_fake_millis = 7000;
+  check(!controller.update(8.0f, -10.0f, settings, false).spillover,
+        "stored reading cannot complete the start delay");
+  g_fake_millis = 8000;
+  check(controller.update(8.0f, -10.0f, settings, true).spillover,
+        "fresh qualifying reading completes the start delay");
+}
+
+void test_spillover_runs_to_min_temperature_and_minimum_time() {
+  ControllerSettings settings;
+  settings.fan_delay_s = 5;
+  settings.spillover_min_on_min = 1;
+  settings.low_c = 3.0f;
+  FridgeController controller;
+
+  g_fake_millis = 1000;
+  controller.update(5.0f, -10.0f, settings);
+  g_fake_millis = 6000;
+  ControllerOutput output = controller.update(5.0f, -10.0f, settings);
+  check(output.spillover, "fridge max starts spillover");
+  check(output.circulation, "circulation follows spillover immediately");
+
+  g_fake_millis = 7000;
+  output = controller.update(2.5f, -10.0f, settings);
+  check(output.spillover,
+        "fridge min cannot override spillover minimum runtime");
+  g_fake_millis = 66000;
+  output = controller.update(2.5f, -10.0f, settings);
+  check(!output.spillover,
+        "spillover stops at fridge min after minimum runtime");
+  check(output.circulation,
+        "circulation remains requested while below fridge min");
+}
+
+void test_freezer_lockout_overrides_spillover_minimum_time() {
+  ControllerSettings settings;
+  settings.fan_delay_s = 5;
+  settings.spillover_min_on_min = 5;
+  FridgeController controller;
+
+  g_fake_millis = 1000;
+  controller.update(8.0f, -10.0f, settings);
+  g_fake_millis = 6000;
+  check(controller.update(8.0f, -10.0f, settings).spillover,
+        "spillover starts before lockout test");
+  g_fake_millis = 7000;
+  const ControllerOutput output =
+      controller.update(8.0f, settings.freezer_lockout_c, settings);
+  check(output.freezer_lockout,
+        "freezer locks out at the configured maximum");
+  check(!output.spillover,
+        "freezer lockout immediately overrides minimum runtime");
+}
+
+void test_cold_circulation_respects_delay_and_minimum_time() {
+  ControllerSettings settings;
+  settings.fan_delay_s = 5;
+  settings.circulation_min_on_min = 1;
+  FridgeController controller;
+
+  g_fake_millis = 1000;
+  check(!controller.update(3.5f, -10.0f, settings).circulation,
+        "cold fridge begins circulation qualification");
+  g_fake_millis = 6000;
+  check(controller.update(3.5f, -10.0f, settings).circulation,
+        "persistent cold starts circulation");
+  g_fake_millis = 7000;
+  check(controller.update(4.5f, -10.0f, settings).circulation,
+        "circulation minimum runtime overrides cleared request");
+  g_fake_millis = 66000;
+  check(!controller.update(4.5f, -10.0f, settings).circulation,
+        "circulation stops after its minimum runtime");
 }
 
 void test_emergency_mode_defaults_off() {
@@ -78,6 +159,9 @@ void test_emergency_respects_only_a_valid_lockout() {
         "missing freezer is ignored in get-me-home mode");
   check(!emergency.update(6000, true, true, -2.0f, settings),
         "valid warm freezer blocks get-me-home spillover");
+  check(!emergency.update(6500, true, true, settings.freezer_lockout_c,
+                          settings),
+        "freezer lockout engages exactly at its configured maximum");
   check(emergency.update(7000, true, true, -10.0f, settings),
         "valid cold freezer permits get-me-home spillover");
 }
@@ -110,10 +194,11 @@ void test_settings_normalization_enforces_numeric_bounds() {
 
   NormalizeControllerSettings(settings);
 
-  check(settings.high_c == hw::kFridgeControlMinC,
-        "spillover threshold is clamped independently");
-  check(settings.low_c == hw::kFridgeControlMaxC,
-        "circulation threshold is clamped independently");
+  check(settings.high_c ==
+            hw::kFridgeControlMinC + hw::kFridgeControlMinimumBandC,
+        "fridge max preserves the minimum control band");
+  check(settings.low_c == hw::kFridgeControlMinC,
+        "fridge min remains below fridge max");
   check(settings.freezer_lockout_c == hw::kFreezerThresholdMinC,
         "freezer lockout is clamped");
   check(settings.fridge_alarm_c == hw::kFridgeAlarmMaxC,
@@ -151,17 +236,36 @@ void test_settings_normalization_enforces_enums_and_finite_values() {
         "unsupported display timeout returns to default");
 }
 
+void test_settings_normalization_enforces_control_band() {
+  ControllerSettings settings;
+  settings.high_c = 5.0f;
+  settings.low_c = 8.0f;
+
+  NormalizeControllerSettings(settings);
+
+  check(settings.high_c == 5.0f,
+        "valid fridge max remains unchanged");
+  check(settings.low_c ==
+            settings.high_c - hw::kFridgeControlMinimumBandC,
+        "fridge min remains below fridge max by the minimum band");
+}
+
 }  // namespace
 
 int main() {
   test_missing_freezer_is_optional();
   test_valid_warm_freezer_locks_out();
+  test_fresh_samples_qualify_spillover_start();
+  test_spillover_runs_to_min_temperature_and_minimum_time();
+  test_freezer_lockout_overrides_spillover_minimum_time();
+  test_cold_circulation_respects_delay_and_minimum_time();
   test_emergency_mode_defaults_off();
   test_emergency_hourly_duty_cycle();
   test_emergency_respects_only_a_valid_lockout();
   test_changing_emergency_setting_restarts_on_phase();
   test_settings_normalization_enforces_numeric_bounds();
   test_settings_normalization_enforces_enums_and_finite_values();
+  test_settings_normalization_enforces_control_band();
 
   if (failures != 0) {
     std::cerr << failures << " controller test(s) failed\n";
