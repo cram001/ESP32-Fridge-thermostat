@@ -19,7 +19,10 @@ constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
 // Minimum gain keeps the position ring effectively inactive and provides
 // one raw count per detent for predictable input handling.
 constexpr uint8_t kEncoderGain = 1;
-constexpr uint16_t kEncoderInitialValue = 0;
+// The counter is bounded to 0..1023 rather than wrapping. Reset it to a small
+// nonzero neutral value after movement: this leaves ample travel between polls
+// in either direction without advancing the low-gain LED ring.
+constexpr uint16_t kEncoderNeutralValue = 32;
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
@@ -72,6 +75,6 @@ constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 // Bump the minor number once per firmware PR so the startup screen confirms
 // which merged revision was uploaded: v0.1.0, v0.2.0, ... v0.10.0, etc.
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.2.0";
+constexpr char kFirmwareVersion[] = "v0.3.0";
 
 }  // namespace hw

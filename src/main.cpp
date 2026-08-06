@@ -41,7 +41,6 @@ bool assignment_mode = false;
 uint8_t assignment_role = 0;
 uint8_t assignment_sensor = 0;
 bool encoder_available = false;
-int32_t last_encoder_position = 0;
 uint8_t selected_setting = 0;
 bool menu_editing = false;
 bool alarm_active = false;
@@ -209,12 +208,14 @@ void update_controller() {
   sk_alarm->set(alarm_active);
 }
 
-int32_t normalized_encoder_delta(int32_t current_position) {
-  int32_t raw_delta = current_position - last_encoder_position;
-  if (raw_delta > 512) raw_delta -= 1024;
-  if (raw_delta < -512) raw_delta += 1024;
-  last_encoder_position = current_position;
-  return raw_delta;
+int32_t read_encoder_delta() {
+  const int32_t position = encoder.getEncoderValue();
+  const int32_t delta =
+      position - static_cast<int32_t>(hw::kEncoderNeutralValue);
+  if (delta != 0) {
+    encoder.setEncoderValue(hw::kEncoderNeutralValue);
+  }
+  return delta;
 }
 
 uint8_t wrapped_index(uint8_t current, int32_t delta, uint8_t count) {
@@ -226,9 +227,11 @@ uint8_t wrapped_index(uint8_t current, int32_t delta, uint8_t count) {
 
 void update_encoder() {
   if (!encoder_available) return;
-  const int32_t position = encoder.getEncoderValue();
-  const int32_t delta = normalized_encoder_delta(position);
+  const int32_t delta = read_encoder_delta();
   const bool raw_button_down = encoder.detectButtonDown();
+  if (raw_button_down) {
+    encoder.setEncoderValue(hw::kEncoderNeutralValue);
+  }
   const uint32_t now = millis();
   const bool raw_activity = delta != 0 || raw_button_down;
 
@@ -565,8 +568,7 @@ void setup() {
   encoder_available = encoder.begin() == NO_ERR;
   if (encoder_available) {
     encoder.setGainCoefficient(hw::kEncoderGain);
-    encoder.setEncoderValue(hw::kEncoderInitialValue);
-    last_encoder_position = encoder.getEncoderValue();
+    encoder.setEncoderValue(hw::kEncoderNeutralValue);
   }
   display.begin();
   display.set_contrast(settings.oled_contrast_percent);
@@ -609,7 +611,7 @@ void loop() {
     control_output.spillover = false;
     control_output.circulation = false;
     if (encoder_available) {
-      last_encoder_position = encoder.getEncoderValue();
+      encoder.setEncoderValue(hw::kEncoderNeutralValue);
       encoder.detectButtonDown();
     }
     last_control_ms = now;
