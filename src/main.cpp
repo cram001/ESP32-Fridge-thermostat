@@ -229,6 +229,9 @@ void update_encoder() {
   if (!encoder_available) return;
   const int32_t delta = read_encoder_delta();
   const bool raw_button_down = encoder.detectButtonDown();
+  if (raw_button_down) {
+    encoder.setEncoderValue(hw::kEncoderNeutralValue);
+  }
   const uint32_t now = millis();
   const bool raw_activity = delta != 0 || raw_button_down;
 
