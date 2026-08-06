@@ -50,16 +50,10 @@ inline void NormalizeControllerSettings(ControllerSettings& settings) {
     settings.freezer_alarm_c = defaults.freezer_alarm_c;
   }
 
-  // Reserve enough room below high_c for the required hysteresis before
-  // constraining low_c. This avoids an inverted constrain range at the
-  // absolute lower bound.
-  settings.high_c =
-      constrain(settings.high_c,
-                hw::kFridgeControlMinC + hw::kHysteresisC,
-                hw::kFridgeControlMaxC);
-  settings.low_c =
-      constrain(settings.low_c, hw::kFridgeControlMinC,
-                settings.high_c - hw::kHysteresisC);
+  settings.high_c = constrain(settings.high_c, hw::kFridgeControlMinC,
+                              hw::kFridgeControlMaxC);
+  settings.low_c = constrain(settings.low_c, hw::kFridgeControlMinC,
+                             hw::kFridgeControlMaxC);
   settings.freezer_lockout_c =
       constrain(settings.freezer_lockout_c, hw::kFreezerThresholdMinC,
                 hw::kFreezerThresholdMaxC);

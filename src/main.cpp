@@ -346,13 +346,13 @@ void update_encoder() {
       if (selected_setting == 0) {
         settings.high_c = constrain(
             settings.high_c + delta * step_c,
-            settings.low_c + hw::kHysteresisC,
+            hw::kFridgeControlMinC,
             hw::kFridgeControlMaxC);
       } else if (selected_setting == 1) {
         settings.low_c = constrain(
             settings.low_c + delta * step_c,
             hw::kFridgeControlMinC,
-            settings.high_c - hw::kHysteresisC);
+            hw::kFridgeControlMaxC);
       } else if (selected_setting == 2) {
         settings.freezer_lockout_c = constrain(
             settings.freezer_lockout_c + delta * step_c,

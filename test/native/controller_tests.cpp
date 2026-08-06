@@ -110,13 +110,10 @@ void test_settings_normalization_enforces_numeric_bounds() {
 
   NormalizeControllerSettings(settings);
 
-  check(settings.high_c ==
-            hw::kFridgeControlMinC + hw::kHysteresisC,
-        "high threshold preserves room for hysteresis at lower bound");
-  check(settings.low_c == hw::kFridgeControlMinC,
-        "low threshold remains inside its absolute lower bound");
-  check(settings.high_c - settings.low_c >= hw::kHysteresisC,
-        "high and low thresholds retain required separation");
+  check(settings.high_c == hw::kFridgeControlMinC,
+        "spillover threshold is clamped independently");
+  check(settings.low_c == hw::kFridgeControlMaxC,
+        "circulation threshold is clamped independently");
   check(settings.freezer_lockout_c == hw::kFreezerThresholdMinC,
         "freezer lockout is clamped");
   check(settings.fridge_alarm_c == hw::kFridgeAlarmMaxC,
