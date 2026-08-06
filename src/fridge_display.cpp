@@ -243,7 +243,7 @@ void FridgeDisplay::draw_alarm(const DisplayModel& model) {
 FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     const DisplayModel& model) const {
   SettingText t{"", ""};
-  const char* names[] = {"Spillover min T", "Circ min T", "Freezer lockout",
+  const char* names[] = {"Spillover min T", "Circ min T", "Freez T lockout",
                          "Fridge alarm", "Freezer alarm"};
   if (model.selected_setting <= 4) {
     const float values[] = {model.settings->high_c, model.settings->low_c,

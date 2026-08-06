@@ -120,7 +120,7 @@ const String ConfigSchema(const SettingsStore&) {
     "properties":{
       "high_c":{"title":"Spillover min T (C)","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "low_c":{"title":"Circ min T (C)","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":%TEMP_STEP_C%},
-      "freezer_lockout_c":{"title":"Freezer lockout (C)","type":"number","minimum":%FREEZER_MIN_C%,"maximum":%FREEZER_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "freezer_lockout_c":{"title":"Freez T lockout (C)","type":"number","minimum":%FREEZER_MIN_C%,"maximum":%FREEZER_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "fridge_alarm_c":{"title":"Fridge alarm temperature (C)","type":"number","minimum":%FRIDGE_ALARM_MIN_C%,"maximum":%FRIDGE_ALARM_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "freezer_alarm_c":{"title":"Freezer alarm temperature (C)","type":"number","minimum":%FREEZER_ALARM_MIN_C%,"maximum":%FREEZER_ALARM_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "fan_delay_s":{"title":"Fan trigger delay (seconds)","type":"integer","minimum":%FAN_DELAY_MIN_S%,"maximum":%FAN_DELAY_MAX_S%,"multipleOf":%FAN_DELAY_STEP_S%},
