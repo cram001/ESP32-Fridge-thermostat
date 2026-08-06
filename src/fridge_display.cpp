@@ -174,9 +174,9 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
     snprintf(ambient_text, sizeof(ambient_text), "--.-%c",
              model.fahrenheit ? 'F' : 'C');
   }
-  oled_.setFont(u8g2_font_helvB08_tf);
+  oled_.setFont(u8g2_font_5x7_tf);
   const int ambient_w = oled_.getStrWidth(ambient_text);
-  oled_.drawStr(x + 125 - ambient_w, y + 11, ambient_text);
+  oled_.drawStr(x + 125 - ambient_w, y + 9, ambient_text);
 
   const uint8_t left_role = model.settings->fridge_on_left ? 0 : 1;
   const uint8_t right_role = model.settings->fridge_on_left ? 1 : 0;
