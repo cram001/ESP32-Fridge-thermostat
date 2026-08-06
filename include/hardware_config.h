@@ -37,7 +37,6 @@ constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
 constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderButtonGuardMs = 750;
-constexpr uint32_t kEncoderContinuousLimitMs = 10UL * 1000UL;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
 constexpr int32_t kEncoderMaxDeltaPerPoll = 8;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;

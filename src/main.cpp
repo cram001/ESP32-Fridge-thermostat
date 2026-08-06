@@ -68,7 +68,6 @@ bool splash_active = true;
 bool settings_dirty = false;
 uint32_t settings_changed_ms = 0;
 bool encoder_input_locked = false;
-uint32_t encoder_activity_started_ms = 0;
 uint32_t encoder_quiet_started_ms = 0;
 uint32_t last_button_event_ms = 0;
 bool encoder_button_ready = true;
@@ -248,7 +247,6 @@ void update_encoder() {
     } else if (now - encoder_quiet_started_ms >=
                hw::kEncoderRecoveryQuietMs) {
       encoder_input_locked = false;
-      encoder_activity_started_ms = 0;
       encoder_quiet_started_ms = 0;
     }
     return;
@@ -257,17 +255,6 @@ void update_encoder() {
     encoder_input_locked = true;
     encoder_quiet_started_ms = 0;
     return;
-  }
-  if (raw_activity) {
-    if (encoder_activity_started_ms == 0) encoder_activity_started_ms = now;
-    if (now - encoder_activity_started_ms >=
-        hw::kEncoderContinuousLimitMs) {
-      encoder_input_locked = true;
-      encoder_quiet_started_ms = 0;
-      return;
-    }
-  } else {
-    encoder_activity_started_ms = 0;
   }
 
   if (!raw_button_down) encoder_button_ready = true;
