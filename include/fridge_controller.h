@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <cmath>
 
+#include "hardware_config.h"
+
 struct ControllerSettings {
   // All internal temperatures are Celsius, regardless of the selected display
   // unit. Signal K conversion to Kelvin happens at the publishing boundary.
@@ -23,6 +25,76 @@ struct ControllerSettings {
   // Default preserves the original layout: freezer left, fridge right.
   bool fridge_on_left = false;
 };
+
+inline bool IsAllowedSettingOption(uint8_t value, const uint8_t* options,
+                                   uint8_t option_count) {
+  for (uint8_t index = 0; index < option_count; ++index) {
+    if (value == options[index]) return true;
+  }
+  return false;
+}
+
+// Apply the authoritative runtime limits to settings received from any source:
+// saved configuration, the SensESP web UI, or the physical rotary UI.
+inline void NormalizeControllerSettings(ControllerSettings& settings) {
+  const ControllerSettings defaults;
+  if (!std::isfinite(settings.high_c)) settings.high_c = defaults.high_c;
+  if (!std::isfinite(settings.low_c)) settings.low_c = defaults.low_c;
+  if (!std::isfinite(settings.freezer_lockout_c)) {
+    settings.freezer_lockout_c = defaults.freezer_lockout_c;
+  }
+  if (!std::isfinite(settings.fridge_alarm_c)) {
+    settings.fridge_alarm_c = defaults.fridge_alarm_c;
+  }
+  if (!std::isfinite(settings.freezer_alarm_c)) {
+    settings.freezer_alarm_c = defaults.freezer_alarm_c;
+  }
+
+  // Reserve enough room below high_c for the required hysteresis before
+  // constraining low_c. This avoids an inverted constrain range at the
+  // absolute lower bound.
+  settings.high_c =
+      constrain(settings.high_c,
+                hw::kFridgeControlMinC + hw::kHysteresisC,
+                hw::kFridgeControlMaxC);
+  settings.low_c =
+      constrain(settings.low_c, hw::kFridgeControlMinC,
+                settings.high_c - hw::kHysteresisC);
+  settings.freezer_lockout_c =
+      constrain(settings.freezer_lockout_c, hw::kFreezerThresholdMinC,
+                hw::kFreezerThresholdMaxC);
+  settings.fridge_alarm_c =
+      constrain(settings.fridge_alarm_c, hw::kFridgeAlarmMinC,
+                hw::kFridgeAlarmMaxC);
+  settings.freezer_alarm_c =
+      constrain(settings.freezer_alarm_c, hw::kFreezerAlarmMinC,
+                hw::kFreezerAlarmMaxC);
+  settings.fan_delay_s =
+      constrain(settings.fan_delay_s, hw::kFanDelayMinS, hw::kFanDelayMaxS);
+  settings.spillover_min_on_min =
+      constrain(settings.spillover_min_on_min, hw::kFanMinimumOnMin,
+                hw::kFanMinimumOnMax);
+  settings.circulation_min_on_min =
+      constrain(settings.circulation_min_on_min, hw::kFanMinimumOnMin,
+                hw::kFanMinimumOnMax);
+
+  if (!IsAllowedSettingOption(
+          settings.emergency_spillover_on_min,
+          hw::kEmergencySpilloverOptions,
+          hw::kEmergencySpilloverOptionCount)) {
+    settings.emergency_spillover_on_min =
+        defaults.emergency_spillover_on_min;
+  }
+  settings.oled_contrast_percent =
+      constrain(settings.oled_contrast_percent,
+                hw::kOledContrastMinPercent,
+                hw::kOledContrastMaxPercent);
+  if (!IsAllowedSettingOption(settings.display_timeout_min,
+                              hw::kDisplayTimeoutOptions,
+                              hw::kDisplayTimeoutOptionCount)) {
+    settings.display_timeout_min = defaults.display_timeout_min;
+  }
+}
 
 struct ControllerOutput {
   bool spillover = false;

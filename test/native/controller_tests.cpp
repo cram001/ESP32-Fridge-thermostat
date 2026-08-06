@@ -96,6 +96,64 @@ void test_changing_emergency_setting_restarts_on_phase() {
         "changing the selected duty cycle starts a fresh on phase");
 }
 
+void test_settings_normalization_enforces_numeric_bounds() {
+  ControllerSettings settings;
+  settings.high_c = -100.0f;
+  settings.low_c = 100.0f;
+  settings.freezer_lockout_c = -100.0f;
+  settings.fridge_alarm_c = 100.0f;
+  settings.freezer_alarm_c = 100.0f;
+  settings.fan_delay_s = 1;
+  settings.spillover_min_on_min = 0;
+  settings.circulation_min_on_min = 99;
+  settings.oled_contrast_percent = 0;
+
+  NormalizeControllerSettings(settings);
+
+  check(settings.high_c ==
+            hw::kFridgeControlMinC + hw::kHysteresisC,
+        "high threshold preserves room for hysteresis at lower bound");
+  check(settings.low_c == hw::kFridgeControlMinC,
+        "low threshold remains inside its absolute lower bound");
+  check(settings.high_c - settings.low_c >= hw::kHysteresisC,
+        "high and low thresholds retain required separation");
+  check(settings.freezer_lockout_c == hw::kFreezerThresholdMinC,
+        "freezer lockout is clamped");
+  check(settings.fridge_alarm_c == hw::kFridgeAlarmMaxC,
+        "fridge alarm is clamped");
+  check(settings.freezer_alarm_c == hw::kFreezerAlarmMaxC,
+        "freezer alarm is clamped");
+  check(settings.fan_delay_s == hw::kFanDelayMinS,
+        "fan delay is clamped");
+  check(settings.spillover_min_on_min == hw::kFanMinimumOnMin,
+        "spillover minimum runtime is clamped");
+  check(settings.circulation_min_on_min == hw::kFanMinimumOnMax,
+        "circulation minimum runtime is clamped");
+  check(settings.oled_contrast_percent == hw::kOledContrastMinPercent,
+        "OLED contrast is clamped");
+}
+
+void test_settings_normalization_enforces_enums_and_finite_values() {
+  ControllerSettings settings;
+  settings.high_c = NAN;
+  settings.low_c = INFINITY;
+  settings.emergency_spillover_on_min = 7;
+  settings.display_timeout_min = 2;
+
+  NormalizeControllerSettings(settings);
+
+  const ControllerSettings defaults;
+  check(settings.high_c == defaults.high_c,
+        "non-finite high threshold returns to default");
+  check(settings.low_c == defaults.low_c,
+        "non-finite low threshold returns to default");
+  check(settings.emergency_spillover_on_min ==
+            defaults.emergency_spillover_on_min,
+        "unsupported emergency duty cycle returns to default");
+  check(settings.display_timeout_min == defaults.display_timeout_min,
+        "unsupported display timeout returns to default");
+}
+
 }  // namespace
 
 int main() {
@@ -105,6 +163,8 @@ int main() {
   test_emergency_hourly_duty_cycle();
   test_emergency_respects_only_a_valid_lockout();
   test_changing_emergency_setting_restarts_on_phase();
+  test_settings_normalization_enforces_numeric_bounds();
+  test_settings_normalization_enforces_enums_and_finite_values();
 
   if (failures != 0) {
     std::cerr << failures << " controller test(s) failed\n";

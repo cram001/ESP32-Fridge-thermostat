@@ -336,23 +336,33 @@ void update_encoder() {
                                                 : shown_offset;
     } else if (selected_setting == 9) {
       settings.fan_delay_s = constrain(
-          static_cast<int>(settings.fan_delay_s) + delta * 5, 5, 180);
+          static_cast<int>(settings.fan_delay_s) +
+              delta * hw::kFanDelayStepS,
+          static_cast<int>(hw::kFanDelayMinS),
+          static_cast<int>(hw::kFanDelayMaxS));
     } else if (selected_setting == 10) {
       settings.spillover_min_on_min = constrain(
-          static_cast<int>(settings.spillover_min_on_min) + delta, 1, 5);
+          static_cast<int>(settings.spillover_min_on_min) + delta,
+          static_cast<int>(hw::kFanMinimumOnMin),
+          static_cast<int>(hw::kFanMinimumOnMax));
     } else if (selected_setting == 11) {
       settings.circulation_min_on_min = constrain(
-          static_cast<int>(settings.circulation_min_on_min) + delta, 1, 5);
+          static_cast<int>(settings.circulation_min_on_min) + delta,
+          static_cast<int>(hw::kFanMinimumOnMin),
+          static_cast<int>(hw::kFanMinimumOnMax));
     } else if (selected_setting == 12) {
-      const uint8_t options[] = {0, 5, 10, 20, 30, 40};
       uint8_t option = 0;
-      while (option < 5 &&
-             options[option] != settings.emergency_spillover_on_min) {
+      while (option < hw::kEmergencySpilloverOptionCount - 1 &&
+             hw::kEmergencySpilloverOptions[option] !=
+                 settings.emergency_spillover_on_min) {
         option++;
       }
-      int32_t next_option = (static_cast<int32_t>(option) + delta) % 6;
-      if (next_option < 0) next_option += 6;
-      settings.emergency_spillover_on_min = options[next_option];
+      int32_t next_option =
+          (static_cast<int32_t>(option) + delta) %
+          hw::kEmergencySpilloverOptionCount;
+      if (next_option < 0) next_option += hw::kEmergencySpilloverOptionCount;
+      settings.emergency_spillover_on_min =
+          hw::kEmergencySpilloverOptions[next_option];
     } else if (selected_setting == 13) {
       settings.buzzer_enabled = !settings.buzzer_enabled;
     } else if (selected_setting == 14 && faults.count() > 0) {
@@ -360,22 +370,27 @@ void update_encoder() {
                        faults.count();
     } else if (selected_setting == 15) {
       settings.oled_contrast_percent = constrain(
-          static_cast<int>(settings.oled_contrast_percent) + delta * 10,
-          10, 100);
+          static_cast<int>(settings.oled_contrast_percent) +
+              delta * hw::kOledContrastStepPercent,
+          static_cast<int>(hw::kOledContrastMinPercent),
+          static_cast<int>(hw::kOledContrastMaxPercent));
       display.set_contrast(settings.oled_contrast_percent);
     } else if (selected_setting == 16) {
-      const uint8_t options[] = {0, 1, 5, 10, 15, 20, 30, 60};
       uint8_t option = 0;
-      while (option < 7 &&
-             options[option] != settings.display_timeout_min) {
+      while (option < hw::kDisplayTimeoutOptionCount - 1 &&
+             hw::kDisplayTimeoutOptions[option] !=
+                 settings.display_timeout_min) {
         option++;
       }
-      int32_t next_option = (static_cast<int32_t>(option) + delta) % 8;
-      if (next_option < 0) next_option += 8;
-      settings.display_timeout_min = options[next_option];
+      int32_t next_option =
+          (static_cast<int32_t>(option) + delta) %
+          hw::kDisplayTimeoutOptionCount;
+      if (next_option < 0) next_option += hw::kDisplayTimeoutOptionCount;
+      settings.display_timeout_min = hw::kDisplayTimeoutOptions[next_option];
     } else if (selected_setting == kLayoutSetting) {
       settings.fridge_on_left = !settings.fridge_on_left;
     }
+    NormalizeControllerSettings(settings);
     mark_settings_dirty();
   }
 
@@ -514,7 +529,8 @@ void setup() {
   ConfigItem(settings_store)
       ->set_title("Fridge Controller")
       ->set_description(
-          "Thermostat, alarms, fan timing, display layout, calibration, and sensor assignments")
+          "Thermostat, alarms, fan timing, display layout, calibration, and sensor assignments. "
+          "Numeric limits shown below are enforced by the controller when settings are saved.")
       ->set_sort_order(500);
   load_settings();
   Wire.begin(hw::kI2cSdaPin, hw::kI2cSclPin);
