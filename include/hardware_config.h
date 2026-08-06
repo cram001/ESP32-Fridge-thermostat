@@ -16,7 +16,9 @@ constexpr bool kFanActiveHigh = true;
 constexpr uint8_t kI2cSdaPin = 21;  // SDA
 constexpr uint8_t kI2cSclPin = 22;  // SCL
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
-constexpr uint8_t kEncoderGain = 51;
+// Minimum gain keeps the position ring effectively inactive and provides
+// one raw count per detent for predictable input handling.
+constexpr uint8_t kEncoderGain = 1;
 constexpr uint16_t kEncoderInitialValue = 0;
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
@@ -38,20 +40,20 @@ constexpr uint32_t kDisplayPeriodMs = 250;
 constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderButtonGuardMs = 750;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
-constexpr int32_t kEncoderMaxDeltaPerPoll = 8;
+constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;
 
 // User-editable temperature ranges and increments.
 constexpr float kTemperatureEditStepC = 0.1f;
-constexpr float kFridgeControlMinC = -5.0f;
-constexpr float kFridgeControlMaxC = 15.0f;
+constexpr float kFridgeControlMinC = -10.0f;
+constexpr float kFridgeControlMaxC = 10.0f;
 constexpr float kFreezerThresholdMinC = -30.0f;
 constexpr float kFreezerThresholdMaxC = 10.0f;
 constexpr float kFridgeAlarmMinC = 0.0f;
 constexpr float kFridgeAlarmMaxC = 30.0f;
-constexpr float kFreezerAlarmMinC = -30.0f;
+constexpr float kFreezerAlarmMinC = -20.0f;
 constexpr float kFreezerAlarmMaxC = 10.0f;
 constexpr float kCalibrationLimitC = 5.0f;
 constexpr uint16_t kFanDelayMinS = 5;
@@ -67,8 +69,9 @@ constexpr uint8_t kEmergencySpilloverOptionCount = 6;
 constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
 constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 
-// Pre-release semantic version. Increment with each firmware change; v1.0.0
-// is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.1.0";
+// Bump the minor number once per firmware PR so the startup screen confirms
+// which merged revision was uploaded: v0.1.0, v0.2.0, ... v0.10.0, etc.
+// v1.0.0 is reserved for the first stable release.
+constexpr char kFirmwareVersion[] = "v0.2.0";
 
 }  // namespace hw

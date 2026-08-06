@@ -214,13 +214,6 @@ int32_t normalized_encoder_delta(int32_t current_position) {
   if (raw_delta > 512) raw_delta -= 1024;
   if (raw_delta < -512) raw_delta += 1024;
   last_encoder_position = current_position;
-
-  // SEN0502 firmware revisions differ in whether gain scales the count or only
-  // the LED indication. Accept both behaviours: 51-count steps become one
-  // detent, while native one-count steps remain one detent.
-  if (abs(raw_delta) >= hw::kEncoderGain) {
-    return raw_delta / static_cast<int32_t>(hw::kEncoderGain);
-  }
   return raw_delta;
 }
 
@@ -353,13 +346,13 @@ void update_encoder() {
       if (selected_setting == 0) {
         settings.high_c = constrain(
             settings.high_c + delta * step_c,
-            settings.low_c + hw::kHysteresisC,
+            hw::kFridgeControlMinC,
             hw::kFridgeControlMaxC);
       } else if (selected_setting == 1) {
         settings.low_c = constrain(
             settings.low_c + delta * step_c,
             hw::kFridgeControlMinC,
-            settings.high_c - hw::kHysteresisC);
+            hw::kFridgeControlMaxC);
       } else if (selected_setting == 2) {
         settings.freezer_lockout_c = constrain(
             settings.freezer_lockout_c + delta * step_c,
