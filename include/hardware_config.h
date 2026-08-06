@@ -47,13 +47,13 @@ constexpr float kHysteresisC = 0.5f;
 
 // User-editable temperature ranges and increments.
 constexpr float kTemperatureEditStepC = 0.1f;
-constexpr float kFridgeControlMinC = -5.0f;
-constexpr float kFridgeControlMaxC = 15.0f;
+constexpr float kFridgeControlMinC = -10.0f;
+constexpr float kFridgeControlMaxC = 10.0f;
 constexpr float kFreezerThresholdMinC = -30.0f;
 constexpr float kFreezerThresholdMaxC = 10.0f;
 constexpr float kFridgeAlarmMinC = 0.0f;
 constexpr float kFridgeAlarmMaxC = 30.0f;
-constexpr float kFreezerAlarmMinC = -30.0f;
+constexpr float kFreezerAlarmMinC = -20.0f;
 constexpr float kFreezerAlarmMaxC = 10.0f;
 constexpr float kCalibrationLimitC = 5.0f;
 constexpr uint16_t kFanDelayMinS = 5;

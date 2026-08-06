@@ -118,9 +118,9 @@ const String ConfigSchema(const SettingsStore&) {
   String schema = R"JSON({
     "type":"object",
     "properties":{
-      "high_c":{"title":"Spillover ON temperature (C)","description":"Must remain at least %HYSTERESIS_C% C above the circulation threshold.","type":"number","minimum":%HIGH_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":%TEMP_STEP_C%},
-      "low_c":{"title":"Circulation ON temperature (C)","description":"Must remain at least %HYSTERESIS_C% C below the spillover threshold.","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%LOW_MAX_C%,"multipleOf":%TEMP_STEP_C%},
-      "freezer_lockout_c":{"title":"Freezer lockout temperature (C)","type":"number","minimum":%FREEZER_MIN_C%,"maximum":%FREEZER_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "high_c":{"title":"Spillover min T (C)","description":"Must remain at least %HYSTERESIS_C% C above the circulation threshold.","type":"number","minimum":%HIGH_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "low_c":{"title":"Circ min T (C)","description":"Must remain at least %HYSTERESIS_C% C below the spillover threshold.","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%LOW_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "freezer_lockout_c":{"title":"Freezer lockout (C)","type":"number","minimum":%FREEZER_MIN_C%,"maximum":%FREEZER_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "fridge_alarm_c":{"title":"Fridge alarm temperature (C)","type":"number","minimum":%FRIDGE_ALARM_MIN_C%,"maximum":%FRIDGE_ALARM_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "freezer_alarm_c":{"title":"Freezer alarm temperature (C)","type":"number","minimum":%FREEZER_ALARM_MIN_C%,"maximum":%FREEZER_ALARM_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "fan_delay_s":{"title":"Fan trigger delay (seconds)","type":"integer","minimum":%FAN_DELAY_MIN_S%,"maximum":%FAN_DELAY_MAX_S%,"multipleOf":%FAN_DELAY_STEP_S%},
