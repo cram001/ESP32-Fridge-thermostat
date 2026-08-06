@@ -16,7 +16,9 @@ constexpr bool kFanActiveHigh = true;
 constexpr uint8_t kI2cSdaPin = 21;  // SDA
 constexpr uint8_t kI2cSclPin = 22;  // SCL
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
-constexpr uint8_t kEncoderGain = 51;
+// Minimum gain keeps the position ring effectively inactive and provides
+// one raw count per detent for predictable input handling.
+constexpr uint8_t kEncoderGain = 1;
 constexpr uint16_t kEncoderInitialValue = 0;
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
@@ -38,7 +40,7 @@ constexpr uint32_t kDisplayPeriodMs = 250;
 constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderButtonGuardMs = 750;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
-constexpr int32_t kEncoderMaxDeltaPerPoll = 8;
+constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;

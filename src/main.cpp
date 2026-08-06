@@ -214,13 +214,6 @@ int32_t normalized_encoder_delta(int32_t current_position) {
   if (raw_delta > 512) raw_delta -= 1024;
   if (raw_delta < -512) raw_delta += 1024;
   last_encoder_position = current_position;
-
-  // SEN0502 firmware revisions differ in whether gain scales the count or only
-  // the LED indication. Accept both behaviours: 51-count steps become one
-  // detent, while native one-count steps remain one detent.
-  if (abs(raw_delta) >= hw::kEncoderGain) {
-    return raw_delta / static_cast<int32_t>(hw::kEncoderGain);
-  }
   return raw_delta;
 }
 
