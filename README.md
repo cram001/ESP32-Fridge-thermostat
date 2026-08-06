@@ -9,6 +9,9 @@ fans; displays status on a 128x64 SSD1309 OLED; and publishes readings and state
 
 Total daily power consumption, with OLED always ON is less than 1 Ah (12VDC system).
 
+For complete installation, first-start, sensor-assignment, control, and menu
+instructions, see [Device setup and menu guide](docs/USER_GUIDE.md).
+
 ## Bring-up
 
 1. Verify every pin and output polarity in `include/hardware_config.h` before
