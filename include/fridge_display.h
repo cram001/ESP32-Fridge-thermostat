@@ -49,8 +49,8 @@ class FridgeDisplay {
   float shown_temperature(float celsius, bool fahrenheit) const;
   SettingText build_setting_text(const DisplayModel& model) const;
 
-  // Screen states. Exactly one of these (plus the fault triangle overlay)
-  // runs per frame -- see the dispatch in draw().
+  // Screen states. Exactly one runs per frame; the fault triangle is a
+  // home-screen-only overlay -- see the dispatch in draw().
   void draw_home(int x, int y, const DisplayModel& model);
   void draw_alarm(const DisplayModel& model);
   void draw_menu(int x, int y, const DisplayModel& model);
@@ -59,7 +59,8 @@ class FridgeDisplay {
 
   void draw_temperature(int x, int y, const char* label, float value,
                         bool fahrenheit);
-  void draw_hero_temperature(int x, int y, float value, bool fahrenheit);
+  void draw_hero_temperature(int x, int y, float value, bool fahrenheit,
+                             const uint8_t* font);
   void draw_fan(int center_x, int center_y, uint8_t phase);
   void draw_warning_triangle(int x, int y);
   void draw_wifi_icon(int x, int y, bool connected);

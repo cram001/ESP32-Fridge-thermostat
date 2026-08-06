@@ -79,6 +79,6 @@ constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 // Bump the minor number once per firmware PR so the startup screen confirms
 // which merged revision was uploaded: v0.1.0, v0.2.0, ... v0.10.0, etc.
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.7.0";
+constexpr char kFirmwareVersion[] = "v0.8.0";
 
 }  // namespace hw

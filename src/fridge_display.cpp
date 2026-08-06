@@ -89,7 +89,8 @@ void FridgeDisplay::draw_temperature(int x, int y, const char* label,
 }
 
 void FridgeDisplay::draw_hero_temperature(int x, int y, float value,
-                                          bool fahrenheit) {
+                                          bool fahrenheit,
+                                          const uint8_t* font) {
   char text[8];
   const float shown = shown_temperature(value, fahrenheit);
   if (std::isfinite(shown)) {
@@ -98,20 +99,8 @@ void FridgeDisplay::draw_hero_temperature(int x, int y, float value,
     snprintf(text, sizeof(text), "--.-");
   }
 
-  const uint8_t* hero_fonts[] = {u8g2_font_logisoso20_tf,
-                                 u8g2_font_logisoso16_tf};
-  const int column_width = 58;
-  oled_.setFont(u8g2_font_helvB08_tf);
-  const int unit_w = oled_.getStrWidth(fahrenheit ? "F" : "C");
-
-  uint8_t font_index = 0;
-  oled_.setFont(hero_fonts[font_index]);
+  oled_.setFont(font);
   int digit_w = oled_.getStrWidth(text);
-  if (digit_w + 2 + unit_w > column_width) {
-    font_index = 1;
-    oled_.setFont(hero_fonts[font_index]);
-    digit_w = oled_.getStrWidth(text);
-  }
   oled_.drawStr(x, y, text);
   oled_.setFont(u8g2_font_helvB08_tf);
   oled_.drawStr(x + digit_w + 2, y, fahrenheit ? "F" : "C");
@@ -190,10 +179,34 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   oled_.setFont(u8g2_font_6x10_tf);
   oled_.drawStr(x + 2, y + 19, role_labels[left_role]);
   oled_.drawStr(x + 66, y + 19, role_labels[right_role]);
-  draw_hero_temperature(x + 2, y + 42, model.role_temp_c[left_role],
-                        model.fahrenheit);
-  draw_hero_temperature(x + 66, y + 42, model.role_temp_c[right_role],
-                        model.fahrenheit);
+
+  // Use one font for both readings so their size does not change
+  // independently as the number of digits or sign changes.
+  const uint8_t* hero_font = u8g2_font_logisoso20_tf;
+  constexpr int kHeroColumnWidth = 61;
+  oled_.setFont(u8g2_font_helvB08_tf);
+  const int unit_w = oled_.getStrWidth(model.fahrenheit ? "F" : "C");
+  const uint8_t displayed_roles[] = {left_role, right_role};
+  for (uint8_t column = 0; column < 2; ++column) {
+    const uint8_t role = displayed_roles[column];
+    char text[8];
+    const float shown =
+        shown_temperature(model.role_temp_c[role], model.fahrenheit);
+    if (std::isfinite(shown)) {
+      snprintf(text, sizeof(text), "%.1f", shown);
+    } else {
+      snprintf(text, sizeof(text), "--.-");
+    }
+    oled_.setFont(hero_font);
+    if (oled_.getStrWidth(text) + 2 + unit_w > kHeroColumnWidth) {
+      hero_font = u8g2_font_logisoso16_tf;
+      break;
+    }
+  }
+  draw_hero_temperature(x + 2, y + 46, model.role_temp_c[left_role],
+                        model.fahrenheit, hero_font);
+  draw_hero_temperature(x + 66, y + 46, model.role_temp_c[right_role],
+                        model.fahrenheit, hero_font);
 
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
@@ -386,8 +399,10 @@ void FridgeDisplay::draw(const DisplayModel& model) {
     draw_home(x, y, model);
   }
 
-  if (!model.alarm_active && !showing_errors && !model.assignment_mode &&
-      model.fault_count > 0 && millis() % 2000UL < 650UL) {
+  const bool showing_home = !model.assignment_mode && !showing_errors &&
+      !model.alarm_active && !model.menu_active;
+  if (showing_home && model.fault_count > 0 &&
+      millis() % 2000UL < 650UL) {
     // Place the fault indicator immediately right of the connection icon,
     // leaving the top-right ambient temperature unobstructed.
     draw_warning_triangle(x + 20, y + 1);
