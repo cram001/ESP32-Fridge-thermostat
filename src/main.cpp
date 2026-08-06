@@ -330,7 +330,8 @@ void update_encoder() {
       const float shown_limit = display_fahrenheit
                                     ? hw::kCalibrationLimitC * 1.8f
                                     : hw::kCalibrationLimitC;
-      shown_offset = constrain(shown_offset + delta * 0.1f,
+      shown_offset = constrain(
+          shown_offset + delta * hw::kTemperatureEditStepC,
                                -shown_limit, shown_limit);
       calibration_c[role] = display_fahrenheit ? shown_offset / 1.8f
                                                 : shown_offset;

@@ -2,6 +2,20 @@
 
 #include "hardware_config.h"
 
+namespace {
+
+String JsonNumberArray(const uint8_t* values, uint8_t count) {
+  String json = "[";
+  for (uint8_t index = 0; index < count; ++index) {
+    if (index != 0) json += ",";
+    json += String(values[index]);
+  }
+  json += "]";
+  return json;
+}
+
+}  // namespace
+
 SettingsStore::SettingsStore(ControllerSettings& settings, bool& fahrenheit,
                              float calibration_c[3], String assigned_rom[3],
                              String& vessel_name)
@@ -104,23 +118,23 @@ const String ConfigSchema(const SettingsStore&) {
   String schema = R"JSON({
     "type":"object",
     "properties":{
-      "high_c":{"title":"Spillover ON temperature (C)","description":"Must remain at least 0.5 C above the circulation threshold.","type":"number","minimum":%HIGH_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":0.1},
-      "low_c":{"title":"Circulation ON temperature (C)","description":"Must remain at least 0.5 C below the spillover threshold.","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%LOW_MAX_C%,"multipleOf":0.1},
-      "freezer_lockout_c":{"title":"Freezer lockout temperature (C)","type":"number","minimum":%FREEZER_MIN_C%,"maximum":%FREEZER_MAX_C%,"multipleOf":0.1},
-      "fridge_alarm_c":{"title":"Fridge alarm temperature (C)","type":"number","minimum":%FRIDGE_ALARM_MIN_C%,"maximum":%FRIDGE_ALARM_MAX_C%,"multipleOf":0.1},
-      "freezer_alarm_c":{"title":"Freezer alarm temperature (C)","type":"number","minimum":%FREEZER_ALARM_MIN_C%,"maximum":%FREEZER_ALARM_MAX_C%,"multipleOf":0.1},
-      "fan_delay_s":{"title":"Fan trigger delay (seconds)","type":"integer","minimum":%FAN_DELAY_MIN_S%,"maximum":%FAN_DELAY_MAX_S%},
+      "high_c":{"title":"Spillover ON temperature (C)","description":"Must remain at least %HYSTERESIS_C% C above the circulation threshold.","type":"number","minimum":%HIGH_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "low_c":{"title":"Circulation ON temperature (C)","description":"Must remain at least %HYSTERESIS_C% C below the spillover threshold.","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%LOW_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "freezer_lockout_c":{"title":"Freezer lockout temperature (C)","type":"number","minimum":%FREEZER_MIN_C%,"maximum":%FREEZER_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "fridge_alarm_c":{"title":"Fridge alarm temperature (C)","type":"number","minimum":%FRIDGE_ALARM_MIN_C%,"maximum":%FRIDGE_ALARM_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "freezer_alarm_c":{"title":"Freezer alarm temperature (C)","type":"number","minimum":%FREEZER_ALARM_MIN_C%,"maximum":%FREEZER_ALARM_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "fan_delay_s":{"title":"Fan trigger delay (seconds)","type":"integer","minimum":%FAN_DELAY_MIN_S%,"maximum":%FAN_DELAY_MAX_S%,"multipleOf":%FAN_DELAY_STEP_S%},
       "spillover_min_on_min":{"title":"Spillover minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
       "circulation_min_on_min":{"title":"Circulation minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
-      "emergency_spillover_on_min":{"title":"Get-me-home spillover fan (minutes ON per hour; 0 = OFF)","type":"integer","enum":[0,5,10,20,30,40]},
+      "emergency_spillover_on_min":{"title":"Get-me-home spillover fan (minutes ON per hour; 0 = OFF)","type":"integer","enum":%EMERGENCY_OPTIONS%},
       "buzzer_enabled":{"title":"Buzzer enabled","type":"boolean"},
       "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","minimum":%CONTRAST_MIN%,"maximum":%CONTRAST_MAX%,"multipleOf":%CONTRAST_STEP%},
-      "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":[0,1,5,10,15,20,30,60]},
+      "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":%DISPLAY_TIMEOUT_OPTIONS%},
       "fridge_on_left":{"title":"Display fridge on left side","type":"boolean"},
       "fahrenheit":{"title":"Display temperatures in Fahrenheit","type":"boolean"},
-      "fridge_calibration_c":{"title":"Fridge calibration offset (C)","type":"number","minimum":%CALIBRATION_MIN_C%,"maximum":%CALIBRATION_MAX_C%,"multipleOf":0.1},
-      "freezer_calibration_c":{"title":"Freezer calibration offset (C)","type":"number","minimum":%CALIBRATION_MIN_C%,"maximum":%CALIBRATION_MAX_C%,"multipleOf":0.1},
-      "ambient_calibration_c":{"title":"Ambient calibration offset (C)","type":"number","minimum":%CALIBRATION_MIN_C%,"maximum":%CALIBRATION_MAX_C%,"multipleOf":0.1},
+      "fridge_calibration_c":{"title":"Fridge calibration offset (C)","type":"number","minimum":%CALIBRATION_MIN_C%,"maximum":%CALIBRATION_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "freezer_calibration_c":{"title":"Freezer calibration offset (C)","type":"number","minimum":%CALIBRATION_MIN_C%,"maximum":%CALIBRATION_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "ambient_calibration_c":{"title":"Ambient calibration offset (C)","type":"number","minimum":%CALIBRATION_MIN_C%,"maximum":%CALIBRATION_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "fridge_rom":{"title":"Fridge sensor ROM (16 hex characters)","type":"string","pattern":"^(|[0-9A-Fa-f]{16})$"},
       "freezer_rom":{"title":"Freezer sensor ROM (16 hex characters)","type":"string","pattern":"^(|[0-9A-Fa-f]{16})$"},
       "ambient_rom":{"title":"Ambient sensor ROM (16 hex characters)","type":"string","pattern":"^(|[0-9A-Fa-f]{16})$"},
@@ -129,6 +143,8 @@ const String ConfigSchema(const SettingsStore&) {
   })JSON";
   schema.replace("%HIGH_MIN_C%",
                  String(hw::kFridgeControlMinC + hw::kHysteresisC, 1));
+  schema.replace("%HYSTERESIS_C%", String(hw::kHysteresisC, 1));
+  schema.replace("%TEMP_STEP_C%", String(hw::kTemperatureEditStepC, 1));
   schema.replace("%FRIDGE_MIN_C%", String(hw::kFridgeControlMinC, 1));
   schema.replace("%FRIDGE_MAX_C%", String(hw::kFridgeControlMaxC, 1));
   schema.replace("%LOW_MAX_C%",
@@ -141,6 +157,7 @@ const String ConfigSchema(const SettingsStore&) {
   schema.replace("%FREEZER_ALARM_MAX_C%", String(hw::kFreezerAlarmMaxC, 1));
   schema.replace("%FAN_DELAY_MIN_S%", String(hw::kFanDelayMinS));
   schema.replace("%FAN_DELAY_MAX_S%", String(hw::kFanDelayMaxS));
+  schema.replace("%FAN_DELAY_STEP_S%", String(hw::kFanDelayStepS));
   schema.replace("%FAN_ON_MIN%", String(hw::kFanMinimumOnMin));
   schema.replace("%FAN_ON_MAX%", String(hw::kFanMinimumOnMax));
   schema.replace("%CONTRAST_MIN%", String(hw::kOledContrastMinPercent));
@@ -149,5 +166,13 @@ const String ConfigSchema(const SettingsStore&) {
   schema.replace("%CALIBRATION_MIN_C%",
                  String(-hw::kCalibrationLimitC, 1));
   schema.replace("%CALIBRATION_MAX_C%", String(hw::kCalibrationLimitC, 1));
+  schema.replace(
+      "%EMERGENCY_OPTIONS%",
+      JsonNumberArray(hw::kEmergencySpilloverOptions,
+                      hw::kEmergencySpilloverOptionCount));
+  schema.replace(
+      "%DISPLAY_TIMEOUT_OPTIONS%",
+      JsonNumberArray(hw::kDisplayTimeoutOptions,
+                      hw::kDisplayTimeoutOptionCount));
   return schema;
 }
