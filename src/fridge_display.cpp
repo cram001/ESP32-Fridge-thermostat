@@ -15,8 +15,11 @@ FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
 void FridgeDisplay::begin() { oled_.begin(); }
 
 void FridgeDisplay::set_contrast(uint8_t percent) {
-  percent = constrain(percent, 10, 100);
-  oled_.setContrast(map(percent, 10, 100, 25, 255));
+  constexpr uint8_t kMinimumPercent = hw::kOledContrastOptions[0];
+  constexpr uint8_t kMaximumPercent =
+      hw::kOledContrastOptions[hw::kOledContrastOptionCount - 1];
+  percent = constrain(percent, kMinimumPercent, kMaximumPercent);
+  oled_.setContrast(map(percent, kMinimumPercent, kMaximumPercent, 13, 255));
 }
 
 void FridgeDisplay::set_enabled(bool enabled) {

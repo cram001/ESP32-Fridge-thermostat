@@ -445,11 +445,18 @@ void update_encoder() {
     } else if (selected_setting == 14 && faults.count() > 0) {
       selected_error = wrapped_index(selected_error, delta, faults.count());
     } else if (selected_setting == 15) {
-      settings.oled_contrast_percent = constrain(
-          static_cast<int>(settings.oled_contrast_percent) +
-              delta * hw::kOledContrastStepPercent,
-          static_cast<int>(hw::kOledContrastMinPercent),
-          static_cast<int>(hw::kOledContrastMaxPercent));
+      uint8_t option = 0;
+      while (option < hw::kOledContrastOptionCount - 1 &&
+             hw::kOledContrastOptions[option] !=
+                 settings.oled_contrast_percent) {
+        option++;
+      }
+      int32_t next_option =
+          (static_cast<int32_t>(option) + delta) %
+          hw::kOledContrastOptionCount;
+      if (next_option < 0) next_option += hw::kOledContrastOptionCount;
+      settings.oled_contrast_percent =
+          hw::kOledContrastOptions[next_option];
       display.set_contrast(settings.oled_contrast_percent);
       setting_changed = true;
     } else if (selected_setting == 16) {

@@ -211,8 +211,9 @@ void test_settings_normalization_enforces_numeric_bounds() {
         "spillover minimum runtime is clamped");
   check(settings.circulation_min_on_min == hw::kFanMinimumOnMax,
         "circulation minimum runtime is clamped");
-  check(settings.oled_contrast_percent == hw::kOledContrastMinPercent,
-        "OLED contrast is clamped");
+  check(settings.oled_contrast_percent ==
+            ControllerSettings().oled_contrast_percent,
+        "unsupported OLED contrast returns to default");
 }
 
 void test_settings_normalization_enforces_enums_and_finite_values() {

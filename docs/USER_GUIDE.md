@@ -150,7 +150,7 @@ setting at a time and allow the compartment to stabilize.
 | 13 | `Get-me-home fan` | Optional spillover duty cycle used only when the fridge probe has failed: OFF or 5, 10, 20, 30, or 40 minutes per hour. |
 | 14 | `Buzzer` | Enable or disable the audible alarm. Visual and Signal K alarms remain available when the buzzer is disabled. |
 | 15 | `ACTIVE ERRORS` | View active fault count, code, and message. Press to browse faults, rotate through them, and press to return. |
-| 16 | `OLED contrast` | Display brightness. Range: 10–100% in 10% steps. |
+| 16 | `OLED contrast` | Display brightness choices: 5%, 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, or 100%. |
 | 17 | `Display off` | Automatic display timeout: Never, 1, 5, 10, 15, 20, 30, or 60 minutes. |
 | 18 | `Display layout` | Choose `FRDG \| FRZ` or `FRZ \| FRDG` on the home screen. |
 | 19 | `Assign fridge` | Select the probe used for fridge display and control, or select `No sensor assigned` to clear the role. |

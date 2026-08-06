@@ -82,10 +82,11 @@ inline void NormalizeControllerSettings(ControllerSettings& settings) {
     settings.emergency_spillover_on_min =
         defaults.emergency_spillover_on_min;
   }
-  settings.oled_contrast_percent =
-      constrain(settings.oled_contrast_percent,
-                hw::kOledContrastMinPercent,
-                hw::kOledContrastMaxPercent);
+  if (!IsAllowedSettingOption(settings.oled_contrast_percent,
+                              hw::kOledContrastOptions,
+                              hw::kOledContrastOptionCount)) {
+    settings.oled_contrast_percent = defaults.oled_contrast_percent;
+  }
   if (!IsAllowedSettingOption(settings.display_timeout_min,
                               hw::kDisplayTimeoutOptions,
                               hw::kDisplayTimeoutOptionCount)) {

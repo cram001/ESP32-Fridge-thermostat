@@ -64,9 +64,10 @@ constexpr uint16_t kFanDelayMaxS = 180;
 constexpr uint16_t kFanDelayStepS = 5;
 constexpr uint8_t kFanMinimumOnMin = 1;
 constexpr uint8_t kFanMinimumOnMax = 5;
-constexpr uint8_t kOledContrastMinPercent = 10;
-constexpr uint8_t kOledContrastMaxPercent = 100;
-constexpr uint8_t kOledContrastStepPercent = 10;
+constexpr uint8_t kOledContrastOptions[] = {
+    5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
+constexpr uint8_t kOledContrastOptionCount =
+    sizeof(kOledContrastOptions) / sizeof(kOledContrastOptions[0]);
 constexpr uint8_t kEmergencySpilloverOptions[] = {0, 5, 10, 20, 30, 40};
 constexpr uint8_t kEmergencySpilloverOptionCount = 6;
 constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
