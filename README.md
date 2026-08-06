@@ -38,6 +38,11 @@ new probe to identify it, and use the appropriate `Assign ...` item. Saving the
 new selection overwrites the old ROM for that role. If that physical sensor was
 assigned elsewhere, the old duplicate assignment is cleared automatically.
 
+The firmware version shown on the startup screen advances once per firmware PR
+using pre-release minor versions (`v0.1.0`, `v0.2.0`, ... `v0.10.0`). After
+uploading, confirm this value on the splash screen to verify that the expected
+revision is running.
+
 The freezer probe is optional for control. If it is missing, the fridge probe
 continues to control the spillover fan. If the freezer probe is present and its
 valid temperature is above the configured lockout, the spillover fan remains
