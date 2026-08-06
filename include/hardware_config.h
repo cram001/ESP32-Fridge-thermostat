@@ -37,7 +37,8 @@ constexpr uint8_t kOledDcPin = 25;     // D2
 constexpr uint8_t kOledResetPin = 26;  // D3
 
 constexpr uint16_t kBuzzerFrequencyHz = 2400;
-constexpr uint32_t kTemperaturePeriodMs = 30UL * 1000UL;
+constexpr uint32_t kTemperaturePeriodMs = 5UL * 1000UL;
+constexpr uint8_t kTemperatureFilterSamples = 6;
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
 constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
@@ -46,12 +47,11 @@ constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
 constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
-constexpr float kHysteresisC = 0.5f;
-
 // User-editable temperature ranges and increments.
 constexpr float kTemperatureEditStepC = 0.1f;
 constexpr float kFridgeControlMinC = -10.0f;
 constexpr float kFridgeControlMaxC = 10.0f;
+constexpr float kFridgeControlMinimumBandC = 0.5f;
 constexpr float kFreezerThresholdMinC = -30.0f;
 constexpr float kFreezerThresholdMaxC = 10.0f;
 constexpr float kFridgeAlarmMinC = 0.0f;
@@ -75,6 +75,6 @@ constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 // Bump the minor number once per firmware PR so the startup screen confirms
 // which merged revision was uploaded: v0.1.0, v0.2.0, ... v0.10.0, etc.
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.3.0";
+constexpr char kFirmwareVersion[] = "v0.4.0";
 
 }  // namespace hw

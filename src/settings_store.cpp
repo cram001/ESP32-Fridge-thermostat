@@ -118,8 +118,8 @@ const String ConfigSchema(const SettingsStore&) {
   String schema = R"JSON({
     "type":"object",
     "properties":{
-      "high_c":{"title":"Spillover min T (C)","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":%TEMP_STEP_C%},
-      "low_c":{"title":"Circ min T (C)","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "high_c":{"title":"Fridge max T (C)","description":"Spillover turns ON after this temperature persists for the fan delay.","type":"number","minimum":%HIGH_MIN_C%,"maximum":%FRIDGE_MAX_C%,"multipleOf":%TEMP_STEP_C%},
+      "low_c":{"title":"Fridge min T (C)","description":"Spillover may turn OFF after reaching this temperature and completing its minimum runtime. Circulation runs below this temperature.","type":"number","minimum":%FRIDGE_MIN_C%,"maximum":%LOW_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "freezer_lockout_c":{"title":"Freez T lockout (C)","type":"number","minimum":%FREEZER_MIN_C%,"maximum":%FREEZER_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "fridge_alarm_c":{"title":"Fridge alarm temperature (C)","type":"number","minimum":%FRIDGE_ALARM_MIN_C%,"maximum":%FRIDGE_ALARM_MAX_C%,"multipleOf":%TEMP_STEP_C%},
       "freezer_alarm_c":{"title":"Freezer alarm temperature (C)","type":"number","minimum":%FREEZER_ALARM_MIN_C%,"maximum":%FREEZER_ALARM_MAX_C%,"multipleOf":%TEMP_STEP_C%},
@@ -141,9 +141,17 @@ const String ConfigSchema(const SettingsStore&) {
       "vessel_name":{"title":"Vessel name (optional)","type":"string","maxLength":24}
     }
   })JSON";
+  schema.replace("%HIGH_MIN_C%",
+                 String(hw::kFridgeControlMinC +
+                            hw::kFridgeControlMinimumBandC,
+                        1));
   schema.replace("%TEMP_STEP_C%", String(hw::kTemperatureEditStepC, 1));
   schema.replace("%FRIDGE_MIN_C%", String(hw::kFridgeControlMinC, 1));
   schema.replace("%FRIDGE_MAX_C%", String(hw::kFridgeControlMaxC, 1));
+  schema.replace("%LOW_MAX_C%",
+                 String(hw::kFridgeControlMaxC -
+                            hw::kFridgeControlMinimumBandC,
+                        1));
   schema.replace("%FREEZER_MIN_C%", String(hw::kFreezerThresholdMinC, 1));
   schema.replace("%FREEZER_MAX_C%", String(hw::kFreezerThresholdMaxC, 1));
   schema.replace("%FRIDGE_ALARM_MIN_C%", String(hw::kFridgeAlarmMinC, 1));

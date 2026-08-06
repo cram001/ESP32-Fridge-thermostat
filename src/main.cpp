@@ -35,8 +35,10 @@ ControllerOutput control_output;
 FaultManager faults;
 float fridge_c = NAN;
 float freezer_c = NAN;
+float freezer_safety_c = NAN;
 float ambient_c = NAN;
 bool temperature_sample_ready = false;
+bool temperature_sample_updated = false;
 bool assignment_mode = false;
 uint8_t assignment_role = 0;
 uint8_t assignment_sensor = 0;
@@ -114,8 +116,10 @@ void read_temperatures() {
   }
   fridge_c = temperatures.role_temperature(0);
   freezer_c = temperatures.role_temperature(1);
+  freezer_safety_c = temperatures.role_raw_temperature(1);
   ambient_c = temperatures.role_temperature(2);
   temperature_sample_ready = true;
+  temperature_sample_updated = true;
 
   sk_fridge->set(std::isfinite(fridge_c) ? fridge_c + 273.15f : NAN);
   sk_freezer->set(std::isfinite(freezer_c) ? freezer_c + 273.15f : NAN);
@@ -148,12 +152,13 @@ void update_controller() {
       (!sensesp_app || !sensesp_app->get_ws_client()->is_connected());
   faults.set(FaultCode::kSignalKOffline, sk_offline);
 
-  control_output = controller.update(fridge_c, freezer_c, settings,
-                                     hw::kHysteresisC);
+  control_output = controller.update(fridge_c, freezer_safety_c, settings,
+                                     temperature_sample_updated);
+  temperature_sample_updated = false;
 
   if (fridge_status != Status::kOk) {
     control_output.spillover = emergency_spillover_controller.update(
-        now, true, freezer_status == Status::kOk, freezer_c, settings);
+        now, true, freezer_status == Status::kOk, freezer_safety_c, settings);
     control_output.circulation = false;
   } else {
     emergency_spillover_controller.update(now, false, false, NAN, settings);
@@ -349,13 +354,13 @@ void update_encoder() {
       if (selected_setting == 0) {
         settings.high_c = constrain(
             settings.high_c + delta * step_c,
-            hw::kFridgeControlMinC,
+            settings.low_c + hw::kFridgeControlMinimumBandC,
             hw::kFridgeControlMaxC);
       } else if (selected_setting == 1) {
         settings.low_c = constrain(
             settings.low_c + delta * step_c,
             hw::kFridgeControlMinC,
-            hw::kFridgeControlMaxC);
+            settings.high_c - hw::kFridgeControlMinimumBandC);
       } else if (selected_setting == 2) {
         settings.freezer_lockout_c = constrain(
             settings.freezer_lockout_c + delta * step_c,

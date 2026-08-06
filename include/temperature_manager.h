@@ -4,6 +4,8 @@
 #include <DallasTemperature.h>
 #include <OneWire.h>
 
+#include "hardware_config.h"
+
 class TemperatureManager {
  public:
   enum class SensorStatus : uint8_t { kOk, kMissing, kOutOfRange };
@@ -22,6 +24,9 @@ class TemperatureManager {
            const float calibration_c[kRoleCount], uint32_t sample_period_ms);
 
   float role_temperature(uint8_t role) const { return role_temp_c_[role]; }
+  float role_raw_temperature(uint8_t role) const {
+    return role_raw_temp_c_[role];
+  }
   SensorStatus role_status(uint8_t role) const { return role_status_[role]; }
   uint8_t detected_count() const { return detected_count_; }
   float detected_temperature(uint8_t sensor) const {
@@ -36,6 +41,8 @@ class TemperatureManager {
   enum class ConversionState : uint8_t { kIdle, kWaiting };
 
   static String rom_to_string(const DeviceAddress rom);
+  void reset_filter(uint8_t role);
+  void add_filter_sample(uint8_t role, float value);
   void collect(const String assigned_rom[kRoleCount],
               const float calibration_c[kRoleCount]);
 
@@ -43,7 +50,14 @@ class TemperatureManager {
   DallasTemperature bus_;
   DeviceAddress detected_roms_[kMaxSensors];
   float detected_temp_c_[kMaxSensors] = {NAN};
+  float role_raw_temp_c_[kRoleCount] = {NAN, NAN, NAN};
   float role_temp_c_[kRoleCount] = {NAN, NAN, NAN};
+  float filter_history_c_[kRoleCount][hw::kTemperatureFilterSamples] = {};
+  float filter_sum_c_[kRoleCount] = {};
+  uint8_t filter_index_[kRoleCount] = {};
+  uint8_t filter_count_[kRoleCount] = {};
+  String filter_rom_[kRoleCount];
+  float filter_calibration_c_[kRoleCount] = {NAN, NAN, NAN};
   SensorStatus role_status_[kRoleCount] = {
       SensorStatus::kMissing, SensorStatus::kMissing, SensorStatus::kMissing};
   uint8_t detected_count_ = 0;

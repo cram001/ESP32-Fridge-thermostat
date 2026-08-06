@@ -10,6 +10,28 @@ String TemperatureManager::rom_to_string(const DeviceAddress rom) {
   return String(text);
 }
 
+void TemperatureManager::reset_filter(uint8_t role) {
+  filter_sum_c_[role] = 0.0f;
+  filter_index_[role] = 0;
+  filter_count_[role] = 0;
+  role_temp_c_[role] = NAN;
+}
+
+void TemperatureManager::add_filter_sample(uint8_t role, float value) {
+  const uint8_t index = filter_index_[role];
+  if (filter_count_[role] == hw::kTemperatureFilterSamples) {
+    filter_sum_c_[role] -= filter_history_c_[role][index];
+  } else {
+    filter_count_[role]++;
+  }
+  filter_history_c_[role][index] = value;
+  filter_sum_c_[role] += value;
+  filter_index_[role] =
+      (index + 1) % hw::kTemperatureFilterSamples;
+  role_temp_c_[role] =
+      filter_sum_c_[role] / filter_count_[role];
+}
+
 void TemperatureManager::begin() {
   bus_.begin();
   bus_.setResolution(10);
@@ -53,8 +75,14 @@ void TemperatureManager::collect(const String assigned_rom[kRoleCount],
   for (uint8_t role = 0; role < kRoleCount; ++role) {
     // Roles follow the immutable 64-bit ROM code, so OneWire discovery order
     // cannot swap the fridge and freezer after a reboot or wiring change.
-    role_temp_c_[role] = NAN;
+    role_raw_temp_c_[role] = NAN;
     role_status_[role] = SensorStatus::kMissing;
+    if (!filter_rom_[role].equalsIgnoreCase(assigned_rom[role]) ||
+        filter_calibration_c_[role] != calibration_c[role]) {
+      reset_filter(role);
+      filter_rom_[role] = assigned_rom[role];
+      filter_calibration_c_[role] = calibration_c[role];
+    }
     for (uint8_t sensor = 0; sensor < detected_count_; ++sensor) {
       if (assigned_rom[role].equalsIgnoreCase(
               rom_to_string(detected_roms_[sensor]))) {
@@ -64,12 +92,16 @@ void TemperatureManager::collect(const String assigned_rom[kRoleCount],
           if (calibrated < -55.0f || calibrated > 85.0f) {
             role_status_[role] = SensorStatus::kOutOfRange;
           } else {
-            role_temp_c_[role] = calibrated;
+            role_raw_temp_c_[role] = calibrated;
             role_status_[role] = SensorStatus::kOk;
+            add_filter_sample(role, calibrated);
           }
         }
         break;
       }
+    }
+    if (role_status_[role] != SensorStatus::kOk) {
+      reset_filter(role);
     }
   }
 }
