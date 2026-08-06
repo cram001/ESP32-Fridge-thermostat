@@ -43,6 +43,7 @@ uint8_t assignment_sensor = 0;
 bool encoder_available = false;
 int32_t last_encoder_position = 0;
 uint8_t selected_setting = 0;
+bool menu_editing = false;
 bool alarm_active = false;
 bool alarm_acknowledged = false;
 bool alarm_visual_active = false;
@@ -224,6 +225,13 @@ int32_t normalized_encoder_delta(int32_t current_position) {
   return raw_delta;
 }
 
+uint8_t wrapped_index(uint8_t current, int32_t delta, uint8_t count) {
+  if (count == 0) return 0;
+  int32_t next = (static_cast<int32_t>(current) + delta) % count;
+  if (next < 0) next += count;
+  return static_cast<uint8_t>(next);
+}
+
 void update_encoder() {
   if (!encoder_available) return;
   const int32_t position = encoder.getEncoderValue();
@@ -278,19 +286,80 @@ void update_encoder() {
     display.set_enabled(true);
     return;
   }
-  if (delta != 0 || button_down) {
-    last_display_activity_ms = now;
-    if (!alarm_visual_active && !assignment_mode) {
-      last_menu_activity_ms = now;
+  if (delta != 0 || button_down) last_display_activity_ms = now;
+
+  if (alarm_visual_active) {
+    if (button_down) {
+      alarm_acknowledged = true;
+      alarm_visual_active = false;
+      noTone(hw::kBuzzerPin);
     }
+    return;
   }
 
-  if (delta != 0) {
-    if (assignment_mode && temperatures.detected_count() > 0) {
+  if (assignment_mode) {
+    const uint8_t detected_count = temperatures.detected_count();
+    if (delta != 0 && detected_count > 0) {
       assignment_sensor =
-          (assignment_sensor + delta + temperatures.detected_count() * 8) %
-          temperatures.detected_count();
-    } else if (selected_setting <= 4) {
+          wrapped_index(assignment_sensor, delta, detected_count);
+    }
+    if (delta != 0 || button_down) last_menu_activity_ms = now;
+    if (!button_down) return;
+
+    if (detected_count > 0) {
+      const String selected_rom = temperatures.detected_rom(assignment_sensor);
+      for (uint8_t role = 0; role < 3; ++role) {
+        if (role != assignment_role &&
+            assigned_rom[role].equalsIgnoreCase(selected_rom)) {
+          assigned_rom[role] = "";
+        }
+      }
+      assigned_rom[assignment_role] = selected_rom;
+      save_settings();
+    }
+    assignment_mode = false;
+    assignment_sensor = 0;
+    return;
+  }
+
+  const bool menu_active =
+      last_menu_activity_ms != 0 &&
+      now - last_menu_activity_ms < kMenuActivityTimeoutMs;
+  if (!menu_active) {
+    last_menu_activity_ms = 0;
+    menu_editing = false;
+    // Rotation on the home screen only counts as display activity. A button
+    // press is the sole way to enter settings, and every entry starts at item 1.
+    if (button_down) {
+      selected_setting = 0;
+      last_menu_activity_ms = now;
+    }
+    return;
+  }
+
+  if (delta != 0 || button_down) last_menu_activity_ms = now;
+
+  if (!menu_editing) {
+    if (delta != 0) {
+      selected_setting =
+          wrapped_index(selected_setting, delta, kSettingCount);
+    }
+    if (button_down) {
+      if (selected_setting >= kFirstAssignmentSetting &&
+          selected_setting <= kLastAssignmentSetting) {
+        assignment_mode = true;
+        assignment_role = selected_setting - kFirstAssignmentSetting;
+        assignment_sensor = 0;
+      } else {
+        menu_editing = true;
+      }
+    }
+    return;
+  }
+
+  bool setting_changed = false;
+  if (delta != 0) {
+    if (selected_setting <= 4) {
       const float step_c = display_fahrenheit
                                ? hw::kTemperatureEditStepC / 1.8f
                                : hw::kTemperatureEditStepC;
@@ -320,8 +389,10 @@ void update_encoder() {
             hw::kFreezerAlarmMinC,
             hw::kFreezerAlarmMaxC);
       }
+      setting_changed = true;
     } else if (selected_setting == 5) {
       display_fahrenheit = !display_fahrenheit;
+      setting_changed = true;
     } else if (selected_setting <= 8) {
       const uint8_t role = selected_setting - 6;
       float shown_offset = display_fahrenheit
@@ -332,25 +403,29 @@ void update_encoder() {
                                     : hw::kCalibrationLimitC;
       shown_offset = constrain(
           shown_offset + delta * hw::kTemperatureEditStepC,
-                               -shown_limit, shown_limit);
+          -shown_limit, shown_limit);
       calibration_c[role] = display_fahrenheit ? shown_offset / 1.8f
-                                                : shown_offset;
+                                                 : shown_offset;
+      setting_changed = true;
     } else if (selected_setting == 9) {
       settings.fan_delay_s = constrain(
           static_cast<int>(settings.fan_delay_s) +
               delta * hw::kFanDelayStepS,
           static_cast<int>(hw::kFanDelayMinS),
           static_cast<int>(hw::kFanDelayMaxS));
+      setting_changed = true;
     } else if (selected_setting == 10) {
       settings.spillover_min_on_min = constrain(
           static_cast<int>(settings.spillover_min_on_min) + delta,
           static_cast<int>(hw::kFanMinimumOnMin),
           static_cast<int>(hw::kFanMinimumOnMax));
+      setting_changed = true;
     } else if (selected_setting == 11) {
       settings.circulation_min_on_min = constrain(
           static_cast<int>(settings.circulation_min_on_min) + delta,
           static_cast<int>(hw::kFanMinimumOnMin),
           static_cast<int>(hw::kFanMinimumOnMax));
+      setting_changed = true;
     } else if (selected_setting == 12) {
       uint8_t option = 0;
       while (option < hw::kEmergencySpilloverOptionCount - 1 &&
@@ -364,11 +439,12 @@ void update_encoder() {
       if (next_option < 0) next_option += hw::kEmergencySpilloverOptionCount;
       settings.emergency_spillover_on_min =
           hw::kEmergencySpilloverOptions[next_option];
+      setting_changed = true;
     } else if (selected_setting == 13) {
       settings.buzzer_enabled = !settings.buzzer_enabled;
+      setting_changed = true;
     } else if (selected_setting == 14 && faults.count() > 0) {
-      selected_error = (selected_error + delta + faults.count() * 8) %
-                       faults.count();
+      selected_error = wrapped_index(selected_error, delta, faults.count());
     } else if (selected_setting == 15) {
       settings.oled_contrast_percent = constrain(
           static_cast<int>(settings.oled_contrast_percent) +
@@ -376,6 +452,7 @@ void update_encoder() {
           static_cast<int>(hw::kOledContrastMinPercent),
           static_cast<int>(hw::kOledContrastMaxPercent));
       display.set_contrast(settings.oled_contrast_percent);
+      setting_changed = true;
     } else if (selected_setting == 16) {
       uint8_t option = 0;
       while (option < hw::kDisplayTimeoutOptionCount - 1 &&
@@ -388,49 +465,18 @@ void update_encoder() {
           hw::kDisplayTimeoutOptionCount;
       if (next_option < 0) next_option += hw::kDisplayTimeoutOptionCount;
       settings.display_timeout_min = hw::kDisplayTimeoutOptions[next_option];
+      setting_changed = true;
     } else if (selected_setting == kLayoutSetting) {
       settings.fridge_on_left = !settings.fridge_on_left;
+      setting_changed = true;
     }
-    NormalizeControllerSettings(settings);
-    mark_settings_dirty();
+    if (setting_changed) {
+      NormalizeControllerSettings(settings);
+      mark_settings_dirty();
+    }
   }
 
-  if (button_down) {
-    if (alarm_visual_active) {
-      alarm_acknowledged = true;
-      alarm_visual_active = false;
-      noTone(hw::kBuzzerPin);
-    } else if (assignment_mode && temperatures.detected_count() == 0) {
-      assignment_mode = false;
-      assignment_sensor = 0;
-      selected_setting = (selected_setting + 1) % kSettingCount;
-      last_menu_activity_ms = now;
-    } else if (assignment_mode && temperatures.detected_count() > 0) {
-      const String selected_rom = temperatures.detected_rom(assignment_sensor);
-      for (uint8_t role = 0; role < 3; ++role) {
-        if (role != assignment_role &&
-            assigned_rom[role].equalsIgnoreCase(selected_rom)) {
-          assigned_rom[role] = "";
-        }
-      }
-      assigned_rom[assignment_role] = selected_rom;
-      save_settings();
-      assignment_mode = false;
-      assignment_sensor = 0;
-    } else if (selected_setting >= kFirstAssignmentSetting &&
-               selected_setting <= kLastAssignmentSetting) {
-      if (temperatures.detected_count() == 0) {
-        selected_setting = (selected_setting + 1) % kSettingCount;
-        last_menu_activity_ms = now;
-      } else {
-        assignment_mode = true;
-        assignment_role = selected_setting - kFirstAssignmentSetting;
-        assignment_sensor = 0;
-      }
-    } else {
-      selected_setting = (selected_setting + 1) % kSettingCount;
-    }
-  }
+  if (button_down) menu_editing = false;
 }
 
 void update_display() {
@@ -471,6 +517,7 @@ void update_display() {
                      critical_probe_alarm,
                      assignment_mode,
                      menu_active,
+                     menu_editing,
                      selected_setting,
                      assignment_role,
                      assignment_sensor,

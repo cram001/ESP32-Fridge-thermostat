@@ -15,6 +15,7 @@ struct DisplayModel {
   bool critical_probe_alarm;
   bool assignment_mode;
   bool menu_active;  // true while the user is actively browsing/editing
+  bool menu_editing;
   uint8_t selected_setting;
   uint8_t assignment_role;
   uint8_t assignment_sensor;

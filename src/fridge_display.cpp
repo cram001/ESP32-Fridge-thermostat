@@ -319,6 +319,9 @@ void FridgeDisplay::draw_menu(int x, int y, const DisplayModel& model) {
   const SettingText t = build_setting_text(model);
   oled_.setFont(u8g2_font_6x10_tf);
   oled_.drawStr(x, y + 10, t.name);
+  const char* mode = model.menu_editing ? "EDIT" : "< >";
+  const int mode_w = oled_.getStrWidth(mode);
+  oled_.drawStr(126 - mode_w, y + 10, mode);
   oled_.setFont(u8g2_font_logisoso16_tf);
   oled_.drawStr(x, y + 34, t.value);
   oled_.setFont(u8g2_font_6x10_tf);
@@ -347,7 +350,9 @@ void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
   oled_.setFont(u8g2_font_5x7_tf);
   oled_.drawStr(x, y + 47, model.fault_message);
   oled_.setFont(u8g2_font_6x10_tf);
-  oled_.drawStr(x, y + 60, "Rotate to browse");
+  oled_.drawStr(x, y + 60,
+                model.menu_editing ? "Rotate / press back"
+                                   : "Press to browse");
 }
 
 void FridgeDisplay::draw(const DisplayModel& model) {
