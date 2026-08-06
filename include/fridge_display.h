@@ -1,6 +1,3 @@
-// Declares the SSD1309 OLED presentation layer and its read-only view model.
-// Rendering is kept separate from control logic: this class formats current
-// state but never changes thermostat settings or output decisions.
 #pragma once
 
 #include <Arduino.h>
@@ -8,8 +5,14 @@
 
 #include "fridge_controller.h"
 
-// Snapshot assembled by main.cpp for one frame. Pointer members refer to
-// application-owned state and must remain valid for the duration of draw().
+// Menu layout, shared by the encoder input handling in main.cpp and the
+// rendering in fridge_display.cpp so the two can never disagree about how
+// many settings there are or which index means what.
+constexpr uint8_t kSettingCount = 21;
+constexpr uint8_t kLayoutSetting = 17;
+constexpr uint8_t kFirstAssignmentSetting = 18;
+constexpr uint8_t kLastAssignmentSetting = 20;
+
 struct DisplayModel {
   const float* role_temp_c;
   const float* calibration_c;
@@ -19,6 +22,7 @@ struct DisplayModel {
   bool alarm_active;
   bool critical_probe_alarm;
   bool assignment_mode;
+  bool editing_setting;
   bool menu_active;  // true while the user is actively browsing/editing
   uint8_t selected_setting;
   uint8_t assignment_role;
@@ -68,7 +72,6 @@ class FridgeDisplay {
   void draw_warning_triangle(int x, int y);
   void draw_wifi_icon(int x, int y, bool connected);
 
-  // Full-frame buffering avoids visible partial redraws on the SPI display.
   U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI oled_;
   uint32_t shift_period_ms_;
   uint32_t last_shift_ms_ = 0;

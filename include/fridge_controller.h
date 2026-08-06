@@ -17,10 +17,12 @@ struct ControllerSettings {
   uint16_t fan_delay_s = 30;
   uint8_t spillover_min_on_min = 2;
   uint8_t circulation_min_on_min = 2;
+  uint8_t emergency_spillover_on_min = 0;
   uint8_t failsafe_off_min = 15;
   bool buzzer_enabled = true;
   uint8_t oled_contrast_percent = 50;
   uint8_t display_timeout_min = 0;
+  bool fridge_on_left = false;
   bool swap_fridge_freezer = false;
 };
 
@@ -117,4 +119,18 @@ class FridgeController {
   uint32_t circulation_pending_since_ = 0;
   uint32_t spillover_started_at_ = 0;
   uint32_t circulation_started_at_ = 0;
+};
+
+class EmergencySpilloverController {
+ public:
+  bool update(uint32_t /*now*/, bool active, bool freezer_ok,
+              float /*freezer_c*/, const ControllerSettings& /*settings*/) {
+    // A missing fridge probe makes the main controller unreliable. Keep
+    // emergency spillover off unless a future firmware change adds a more
+    // sophisticated fallback based on freezer readings.
+    if (!active || !freezer_ok) {
+      return false;
+    }
+    return false;
+  }
 };

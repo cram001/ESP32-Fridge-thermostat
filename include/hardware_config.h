@@ -19,6 +19,16 @@ constexpr uint8_t kI2cSclPin = 22;
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
 constexpr uint8_t kEncoderGainCoefficient = 1;  // minimum supported gain for rotation tracking
 constexpr uint8_t kEncoderCountsPerStep = 1;   // normalize 1-2 raw encoder counts to one UI step
+constexpr uint8_t kEncoderGain = kEncoderGainCoefficient;
+constexpr uint16_t kEncoderInitialValue = 0;
+constexpr float kTemperatureEditStepC = 0.1f;
+constexpr float kFreezerThresholdMinC = -10.0f;
+constexpr float kFreezerThresholdMaxC = 10.0f;
+constexpr float kFridgeAlarmMinC = 3.0f;
+constexpr float kFridgeAlarmMaxC = 45.0f;
+constexpr float kFreezerAlarmMinC = -15.0f;
+constexpr float kFreezerAlarmMaxC = 45.0f;
+constexpr float kCalibrationLimitC = 5.0f;
 
 // Safety and fault qualification intervals.
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
@@ -51,7 +61,9 @@ constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 constexpr float kHysteresisC = 0.5f;
-
+// Valid bounds for fridge control threshold settings.
+constexpr float kFridgeControlMinC = -40.0f;
+constexpr float kFridgeControlMaxC = 30.0f;
 constexpr char kFirmwareVersion[] = "v0.1.0";
 
 }  // namespace hw

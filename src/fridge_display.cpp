@@ -1,11 +1,6 @@
-// Implements all drawing for the 128x64 SSD1309 OLED.
-// Screens consume a DisplayModel snapshot and use full-buffer rendering;
-// temperature unit conversion here is presentation-only.
 #include "fridge_display.h"
-
-namespace {
-constexpr uint8_t kSettingCount = 19;
-}
+#include "fridge_controller.h"
+#include "hardware_config.h"
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
                              uint32_t shift_period_ms)
@@ -28,12 +23,11 @@ void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
                                 uint8_t seconds_remaining) {
   oled_.clearBuffer();
 
-  // Corissa under sail: mast, boom, mainsail, jib, hull, pennant, and sea.
   oled_.drawVLine(63, 14, 30);
   oled_.drawHLine(42, 43, 43);
-  oled_.drawTriangle(65, 16, 65, 41, 84, 41);  // mainsail
-  oled_.drawTriangle(61, 19, 61, 41, 44, 41);  // jib
-  oled_.drawTriangle(64, 14, 72, 16, 64, 18);  // pennant
+  oled_.drawTriangle(65, 16, 65, 41, 84, 41);
+  oled_.drawTriangle(61, 19, 61, 41, 44, 41);
+  oled_.drawTriangle(64, 14, 72, 16, 64, 18);
   oled_.drawLine(36, 45, 91, 45);
   oled_.drawLine(36, 45, 44, 51);
   oled_.drawLine(44, 51, 82, 51);
@@ -53,6 +47,7 @@ void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
     title[strlen(title) - 1] = '\0';
   }
   oled_.drawStr(2, 12, title);
+
   oled_.setFont(u8g2_font_5x7_tf);
   const int version_width = oled_.getStrWidth(version);
   oled_.drawStr(127 - version_width, 7, version);
@@ -64,12 +59,10 @@ void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
   snprintf(status, sizeof(status), "%us", seconds_remaining);
   const int countdown_width = oled_.getStrWidth(status);
   oled_.drawStr(127 - countdown_width, 63, status);
-
   oled_.sendBuffer();
 }
 
 float FridgeDisplay::shown_temperature(float celsius, bool fahrenheit) const {
-  // Conversion is presentation-only; control and persisted thresholds stay C.
   return fahrenheit && std::isfinite(celsius) ? celsius * 1.8f + 32.0f
                                                : celsius;
 }
@@ -89,10 +82,6 @@ void FridgeDisplay::draw_temperature(int x, int y, const char* label,
 
 void FridgeDisplay::draw_hero_temperature(int x, int y, float value,
                                           bool fahrenheit) {
-  // Keeps the decimal place. A single u8g2 font size can't be trusted to fit
-  // every possible string ("-1.0" vs "-40.0") inside a 62px-wide column, so
-  // this measures at logisoso20 first and drops to logisoso16 only if the
-  // rendered string (digits + unit letter) would actually overflow.
   char text[8];
   const float shown = shown_temperature(value, fahrenheit);
   if (std::isfinite(shown)) {
@@ -103,7 +92,7 @@ void FridgeDisplay::draw_hero_temperature(int x, int y, float value,
 
   const uint8_t* hero_fonts[] = {u8g2_font_logisoso20_tf,
                                  u8g2_font_logisoso16_tf};
-  const int column_width = 58;  // ~62px column minus a couple px margin
+  const int column_width = 58;
   oled_.setFont(u8g2_font_helvB08_tf);
   const int unit_w = oled_.getStrWidth(fahrenheit ? "F" : "C");
 
@@ -115,22 +104,16 @@ void FridgeDisplay::draw_hero_temperature(int x, int y, float value,
     oled_.setFont(hero_fonts[font_index]);
     digit_w = oled_.getStrWidth(text);
   }
-  oled_.setFont(hero_fonts[font_index]);
   oled_.drawStr(x, y, text);
   oled_.setFont(u8g2_font_helvB08_tf);
   oled_.drawStr(x + digit_w + 2, y, fahrenheit ? "F" : "C");
 }
 
 void FridgeDisplay::draw_wifi_icon(int x, int y, bool connected) {
-  // Three nested arcs + a dot, the standard wifi glyph, built from u8g2's
-  // quarter-circle draw flags rather than a bitmap so it stays crisp at any
-  // contrast setting. x,y is the anchor point (the dot).
   oled_.drawDisc(x, y, 1);
   oled_.drawCircle(x, y, 4, U8G2_DRAW_UPPER_LEFT | U8G2_DRAW_UPPER_RIGHT);
   oled_.drawCircle(x, y, 7, U8G2_DRAW_UPPER_LEFT | U8G2_DRAW_UPPER_RIGHT);
-  if (!connected) {
-    oled_.drawLine(x - 7, y - 8, x + 7, y + 2);
-  }
+  if (!connected) oled_.drawLine(x - 7, y - 8, x + 7, y + 2);
 }
 
 void FridgeDisplay::draw_assignment(int x, int y,
@@ -142,23 +125,29 @@ void FridgeDisplay::draw_assignment(int x, int y,
   oled_.drawStr(x, y + 10, line);
   if (model.detected_count == 0) {
     oled_.drawStr(x, y + 28, "No sensors detected");
-    oled_.drawStr(x, y + 44, "Press button to exit");
+    oled_.drawStr(x, y + 44, "Press to return");
     return;
   }
-  snprintf(line, sizeof(line), "Probe %u of %u", model.assignment_sensor + 1,
-           model.detected_count);
+  const bool no_sensor_selected =
+      model.assignment_sensor >= model.detected_count;
+  snprintf(line, sizeof(line), "Option %u of %u",
+           model.assignment_sensor + 1,
+           model.detected_count + 1);
   oled_.drawStr(x, y + 22, line);
-  draw_temperature(x, y + 35, "Live", model.assignment_temp_c,
-                   model.fahrenheit);
-  snprintf(line, sizeof(line), "ROM ...%s",
-           model.assignment_rom.substring(8).c_str());
-  oled_.drawStr(x, y + 47, line);
+  if (no_sensor_selected) {
+    oled_.drawStr(x, y + 35, "No sensor assigned");
+    oled_.drawStr(x, y + 47, "ROM NONE");
+  } else {
+    draw_temperature(x, y + 35, "Live", model.assignment_temp_c,
+                     model.fahrenheit);
+    snprintf(line, sizeof(line), "ROM ...%s",
+             model.assignment_rom.substring(8).c_str());
+    oled_.drawStr(x, y + 47, line);
+  }
   oled_.drawStr(x, y + 61, "Rotate / press assign");
 }
 
 void FridgeDisplay::draw_fan(int center_x, int center_y, uint8_t phase) {
-  // Three short blades rotate through six frames. This represents a commanded
-  // ON state only; the installation has no tachometer to prove fan motion.
   const float angle_offset = phase * PI / 6.0f;
   for (uint8_t blade = 0; blade < 3; ++blade) {
     const float angle = angle_offset + blade * 2.0f * PI / 3.0f;
@@ -176,18 +165,11 @@ void FridgeDisplay::draw_warning_triangle(int x, int y) {
 }
 
 void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
-  // Idle default, four bands top to bottom:
-  //   1. wifi icon + ambient reading                     (y  0-12)
-  //   2. small FRZ/FRDG column labels                    (y 12-20)
-  //   3. hero digits w/ one decimal, Freezer left /       (y 20-42, ~20px --
-  //      Fridge right, auto-shrinks if a string overflows  see below)
-  //   4. fan status strip                                 (y 42-64)
-  // Coordinates are estimates against nominal U8g2 glyph metrics; expect to
-  // nudge a few pixels once it's on real hardware.
   draw_wifi_icon(x + 9, y + 9, model.signalk_connected);
 
   char ambient_text[8];
-  const float ambient = shown_temperature(model.role_temp_c[2], model.fahrenheit);
+  const float ambient =
+      shown_temperature(model.role_temp_c[2], model.fahrenheit);
   if (std::isfinite(ambient)) {
     snprintf(ambient_text, sizeof(ambient_text), "%.1f%c", ambient,
              model.fahrenheit ? 'F' : 'C');
@@ -197,40 +179,40 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   }
   oled_.setFont(u8g2_font_helvB10_tf);
   const int ambient_w = oled_.getStrWidth(ambient_text);
-  oled_.drawStr(x + 126 - ambient_w, y + 11, ambient_text);
+  oled_.drawStr(x + 125 - ambient_w, y + 11, ambient_text);
+
+  const uint8_t left_role = model.settings->fridge_on_left ? 0 : 1;
+  const uint8_t right_role = model.settings->fridge_on_left ? 1 : 0;
+  const char* role_labels[] = {"FRDG", "FRZ"};
 
   oled_.setFont(u8g2_font_6x10_tf);
-  if (model.settings->swap_fridge_freezer) {
-    oled_.drawStr(x + 2, y + 19, "FRDG");
-    oled_.drawStr(x + 66, y + 19, "FRZ");
-    draw_hero_temperature(x + 2, y + 42, model.role_temp_c[0], model.fahrenheit);
-    draw_hero_temperature(x + 66, y + 42, model.role_temp_c[1], model.fahrenheit);
-  } else {
-    oled_.drawStr(x + 2, y + 19, "FRZ");
-    oled_.drawStr(x + 66, y + 19, "FRDG");
-    draw_hero_temperature(x + 2, y + 42, model.role_temp_c[1], model.fahrenheit);
-    draw_hero_temperature(x + 66, y + 42, model.role_temp_c[0], model.fahrenheit);
-  }
+  oled_.drawStr(x + 2, y + 19, role_labels[left_role]);
+  oled_.drawStr(x + 66, y + 19, role_labels[right_role]);
+  draw_hero_temperature(x + 2, y + 42, model.role_temp_c[left_role],
+                        model.fahrenheit);
+  draw_hero_temperature(x + 66, y + 42, model.role_temp_c[right_role],
+                        model.fahrenheit);
 
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
-  // Keep the baseline at 61: the burn-in shift can add 2px, placing the
-  // lowest position at row 63, still inside the 64px canvas.
-  oled_.drawStr(x + 2, y + 61, "SPILL");
-  if (model.control->spillover) draw_fan(x + 34, y + 56, fan_phase);
-  else oled_.drawStr(x + 31, y + 61, "-");
-  oled_.drawStr(x + 68, y + 61, "CIRC");
-  if (model.control->circulation) draw_fan(x + 96, y + 56, fan_phase);
-  else oled_.drawStr(x + 93, y + 61, "-");
+  oled_.drawStr(x + 2, y + 62, "SPILL");
+  if (model.control->spillover) {
+    draw_fan(x + 34, y + 57, fan_phase);
+  } else {
+    oled_.drawStr(x + 31, y + 62, "-");
+  }
+  oled_.drawStr(x + 68, y + 62, "CIRC");
+  if (model.control->circulation) {
+    draw_fan(x + 96, y + 57, fan_phase);
+  } else {
+    oled_.drawStr(x + 93, y + 62, "-");
+  }
 }
 
 void FridgeDisplay::draw_alarm(const DisplayModel& model) {
-  // Full-screen inversion is far harder to miss from across a cabin than a
-  // word appended to a small settings line plus a 10px corner triangle.
   oled_.setDrawColor(1);
   oled_.drawBox(0, 0, 128, 64);
   oled_.setDrawColor(0);
-
   oled_.setFont(u8g2_font_helvB10_tf);
   oled_.drawStr(30, 18, "ALARM");
 
@@ -258,14 +240,11 @@ void FridgeDisplay::draw_alarm(const DisplayModel& model) {
   oled_.setFont(u8g2_font_logisoso16_tf);
   const int w = oled_.getStrWidth(line);
   oled_.drawStr((128 - w) / 2, 48, line);
-
-  oled_.setDrawColor(1);  // restore default before any overlay draws
+  oled_.setDrawColor(1);
 }
 
 FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     const DisplayModel& model) const {
-  // selected_setting is shared with main.cpp's encoder editor. Keep this
-  // index-to-label mapping synchronized with that switch and kSettingCount.
   SettingText t{"", ""};
   const char* names[] = {"High", "Low", "Lockout", "Fridge alarm",
                          "Freezer alarm"};
@@ -295,15 +274,24 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     snprintf(t.value, sizeof(t.value), "%us", model.settings->fan_delay_s);
   } else if (model.selected_setting == 10) {
     t.name = "Spill min ON";
-    snprintf(t.value, sizeof(t.value), "%um",
-             model.settings->spillover_min_on_min);
+    if (model.settings->spillover_min_on_min == 0) {
+      snprintf(t.value, sizeof(t.value), "OFF");
+    } else {
+      snprintf(t.value, sizeof(t.value), "%um",
+               model.settings->spillover_min_on_min);
+    }
   } else if (model.selected_setting == 11) {
     t.name = "Circ min ON";
     snprintf(t.value, sizeof(t.value), "%um",
              model.settings->circulation_min_on_min);
   } else if (model.selected_setting == 12) {
-    t.name = "Failsafe off";
-    snprintf(t.value, sizeof(t.value), "%um", model.settings->failsafe_off_min);
+    t.name = "Get-me-home fan";
+    if (model.settings->emergency_spillover_on_min == 0) {
+      snprintf(t.value, sizeof(t.value), "OFF");
+    } else {
+      snprintf(t.value, sizeof(t.value), "%um/hour",
+               model.settings->emergency_spillover_on_min);
+    }
   } else if (model.selected_setting == 13) {
     t.name = "Buzzer";
     snprintf(t.value, sizeof(t.value), "%s",
@@ -320,44 +308,41 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
       snprintf(t.value, sizeof(t.value), "%um",
                model.settings->display_timeout_min);
     }
-  } else if (model.selected_setting == 17) {
-    t.name = "Swap sides";
+  } else if (model.selected_setting == kLayoutSetting) {
+    t.name = "Display layout";
     snprintf(t.value, sizeof(t.value), "%s",
-             model.settings->swap_fridge_freezer ? "ON" : "OFF");
-  } else {
-    t.name = "Assign sensors";
+             model.settings->fridge_on_left ? "FRDG | FRZ" : "FRZ | FRDG");
+  } else if (model.selected_setting >= kFirstAssignmentSetting &&
+             model.selected_setting <= kLastAssignmentSetting) {
+    const char* roles[] = {"Assign fridge", "Assign freezer",
+                           "Assign ambient"};
+    t.name = roles[model.selected_setting - kFirstAssignmentSetting];
     t.value[0] = '\0';
   }
   return t;
 }
 
 void FridgeDisplay::draw_menu(int x, int y, const DisplayModel& model) {
-  // Dedicated screen while the encoder is in active use: the item being
-  // edited gets a big font instead of sharing space with the temperatures,
-  // and a fraction + progress bar replace guessing your position by memory.
   const SettingText t = build_setting_text(model);
   oled_.setFont(u8g2_font_6x10_tf);
   oled_.drawStr(x, y + 10, t.name);
-
   oled_.setFont(u8g2_font_logisoso16_tf);
   oled_.drawStr(x, y + 34, t.value);
-
   oled_.setFont(u8g2_font_6x10_tf);
   char frac[8];
   snprintf(frac, sizeof(frac), "%u/%u", model.selected_setting + 1,
            kSettingCount);
   const int w = oled_.getStrWidth(frac);
   oled_.drawStr(126 - w, y + 46, frac);
-
   oled_.drawFrame(x, y + 50, 124, 4);
   const int fill = (124 * (model.selected_setting + 1)) / kSettingCount;
   oled_.drawBox(x, y + 50, fill, 4);
+  oled_.setFont(u8g2_font_5x7_tf);
+  oled_.drawStr(x, y + 58,
+                model.editing_setting ? "Press to save" : "Press to edit");
 }
 
 void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
-  // Re-spaced to fit inside the confirmed 64px canvas -- the original
-  // "Rotate to browse" line at y+63 (against an assumed 62px canvas) was
-  // drawn off-screen.
   oled_.setFont(u8g2_font_6x10_tf);
   char line[24];
   oled_.drawStr(x, y + 10, "ACTIVE ERRORS");
@@ -369,25 +354,25 @@ void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
   }
   snprintf(line, sizeof(line), "Code E%02u", model.fault_code);
   oled_.drawStr(x, y + 34, line);
+  oled_.setFont(u8g2_font_5x7_tf);
   oled_.drawStr(x, y + 47, model.fault_message);
+  oled_.setFont(u8g2_font_6x10_tf);
   oled_.drawStr(x, y + 60, "Rotate to browse");
 }
 
 void FridgeDisplay::draw(const DisplayModel& model) {
-  // A small repeating offset distributes OLED wear without making the
-  // movement visually distracting.
-  static const int8_t shifts[][2] = {{0, 0}, {2, 0}, {2, 2},
-                                     {0, 2}, {1, 1}};
+  static const int8_t shifts[][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
   if (millis() - last_shift_ms_ >= shift_period_ms_) {
     last_shift_ms_ = millis();
-    shift_index_ = (shift_index_ + 1) % 5;
+    shift_index_ = (shift_index_ + 1) % 4;
   }
   const int x = shifts[shift_index_][0];
   const int y = shifts[shift_index_][1];
   oled_.clearBuffer();
 
   const bool showing_errors =
-      model.selected_setting == 14 && (model.menu_active || model.fault_count > 0);
+      model.selected_setting == 14 &&
+      (model.menu_active || model.fault_count > 0);
 
   if (model.assignment_mode) {
     draw_assignment(x, y, model);
@@ -401,11 +386,11 @@ void FridgeDisplay::draw(const DisplayModel& model) {
     draw_home(x, y, model);
   }
 
-  // The fault triangle is redundant on screens that already communicate the
-  // fault (alarm banner, error browser) so it only overlays home/menu.
   if (!model.alarm_active && !showing_errors && !model.assignment_mode &&
-      model.fault_count > 0) {
-    if (millis() % 2000UL < 650UL) draw_warning_triangle(x + 22, y + 1);
+      model.fault_count > 0 && millis() % 2000UL < 650UL) {
+    // Place the fault indicator immediately right of the connection icon,
+    // leaving the top-right ambient temperature unobstructed.
+    draw_warning_triangle(x + 20, y + 1);
   }
   oled_.sendBuffer();
 }
