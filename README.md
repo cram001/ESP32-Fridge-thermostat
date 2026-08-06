@@ -27,7 +27,9 @@ Total daily power consumption, with OLED always ON is less than 1 Ah (12VDC syst
    Signal K data browser, or on the OLED assignment screen. On the OLED, choose
    `Assign fridge`, `Assign freezer`, or `Assign ambient`, rotate to the matching
    probe, and press to save its ROM.
-6. Press the rotary button to browse settings; rotate to edit the selected item.
+6. Press the rotary button from the home screen to open settings at item 1.
+   Rotate in either direction to browse, press to edit, rotate to change the
+   value, and press again to return to browsing.
 
 Sensor roles are never assigned automatically by OneWire bus order. They follow
 the saved 64-bit ROM, so reconnecting wiring cannot exchange fridge and freezer
