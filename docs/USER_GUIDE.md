@@ -65,6 +65,10 @@ order.
 4. Press to save the selected probe.
 5. Repeat for the other roles.
 
+Each assignment list includes a final `No sensor assigned` option. Select it to
+clear that role. The option remains available even when no probes are currently
+detected, allowing a previously saved assignment to be removed.
+
 One physical probe cannot remain assigned to multiple roles. Assigning it to a
 new role clears its previous role. Power-cycle the controller after adding or
 replacing a probe so the 1-Wire bus discovers it.
@@ -149,9 +153,9 @@ setting at a time and allow the compartment to stabilize.
 | 16 | `OLED contrast` | Display brightness. Range: 10–100% in 10% steps. |
 | 17 | `Display off` | Automatic display timeout: Never, 1, 5, 10, 15, 20, 30, or 60 minutes. |
 | 18 | `Display layout` | Choose `FRDG \| FRZ` or `FRZ \| FRDG` on the home screen. |
-| 19 | `Assign fridge` | Select the probe used for fridge display and control. |
-| 20 | `Assign freezer` | Select the probe used for freezer display, alarm, and spillover lockout. |
-| 21 | `Assign ambient` | Select the probe used for ambient/cabin display and publishing. |
+| 19 | `Assign fridge` | Select the probe used for fridge display and control, or select `No sensor assigned` to clear the role. |
+| 20 | `Assign freezer` | Select the probe used for freezer display, alarm, and spillover lockout, or clear the role. |
+| 21 | `Assign ambient` | Select the probe used for ambient/cabin display and publishing, or clear the role. |
 
 ## SensESP web settings
 

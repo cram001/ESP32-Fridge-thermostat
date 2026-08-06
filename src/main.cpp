@@ -287,14 +287,17 @@ void update_encoder() {
 
   if (assignment_mode) {
     const uint8_t detected_count = temperatures.detected_count();
-    if (delta != 0 && detected_count > 0) {
+    if (delta != 0) {
       assignment_sensor =
-          wrapped_index(assignment_sensor, delta, detected_count);
+          wrapped_index(assignment_sensor, delta, detected_count + 1);
     }
     if (delta != 0 || button_down) last_menu_activity_ms = now;
     if (!button_down) return;
 
-    if (detected_count > 0) {
+    if (assignment_sensor >= detected_count) {
+      assigned_rom[assignment_role] = "";
+      save_settings();
+    } else {
       const String selected_rom = temperatures.detected_rom(assignment_sensor);
       for (uint8_t role = 0; role < 3; ++role) {
         if (role != assignment_role &&
@@ -337,7 +340,15 @@ void update_encoder() {
           selected_setting <= kLastAssignmentSetting) {
         assignment_mode = true;
         assignment_role = selected_setting - kFirstAssignmentSetting;
-        assignment_sensor = 0;
+        const uint8_t detected_count = temperatures.detected_count();
+        assignment_sensor = detected_count;
+        for (uint8_t sensor = 0; sensor < detected_count; ++sensor) {
+          if (assigned_rom[assignment_role].equalsIgnoreCase(
+                  temperatures.detected_rom(sensor))) {
+            assignment_sensor = sensor;
+            break;
+          }
+        }
       } else {
         menu_editing = true;
       }
@@ -485,9 +496,13 @@ void update_display() {
   const float role_temps[] = {fridge_c, freezer_c, ambient_c};
   const uint8_t count = temperatures.detected_count();
   const float assignment_temp =
-      count > 0 ? temperatures.detected_temperature(assignment_sensor) : NAN;
+      assignment_sensor < count
+          ? temperatures.detected_temperature(assignment_sensor)
+          : NAN;
   const String assignment_rom =
-      count > 0 ? temperatures.detected_rom(assignment_sensor) : String();
+      assignment_sensor < count
+          ? temperatures.detected_rom(assignment_sensor)
+          : String();
   const uint8_t fault_count = faults.count();
   if (fault_count == 0 || selected_error >= fault_count) selected_error = 0;
   const FaultEntry fault = faults.entry(selected_error);
