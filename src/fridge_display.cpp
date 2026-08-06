@@ -15,8 +15,11 @@ FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
 void FridgeDisplay::begin() { oled_.begin(); }
 
 void FridgeDisplay::set_contrast(uint8_t percent) {
-  percent = constrain(percent, 10, 100);
-  oled_.setContrast(map(percent, 10, 100, 25, 255));
+  constexpr uint8_t kMinimumPercent = hw::kOledContrastOptions[0];
+  constexpr uint8_t kMaximumPercent =
+      hw::kOledContrastOptions[hw::kOledContrastOptionCount - 1];
+  percent = constrain(percent, kMinimumPercent, kMaximumPercent);
+  oled_.setContrast(map(percent, kMinimumPercent, kMaximumPercent, 13, 255));
 }
 
 void FridgeDisplay::set_enabled(bool enabled) {
@@ -128,19 +131,21 @@ void FridgeDisplay::draw_assignment(int x, int y,
   oled_.setFont(u8g2_font_6x10_tf);
   snprintf(line, sizeof(line), "ASSIGN %s", roles[model.assignment_role]);
   oled_.drawStr(x, y + 10, line);
-  if (model.detected_count == 0) {
-    oled_.drawStr(x, y + 28, "No sensors detected");
-    oled_.drawStr(x, y + 44, "Press to return");
-    return;
-  }
-  snprintf(line, sizeof(line), "Probe %u of %u", model.assignment_sensor + 1,
-           model.detected_count);
+  const bool no_sensor_selected =
+      model.assignment_sensor >= model.detected_count;
+  snprintf(line, sizeof(line), "Option %u of %u",
+           model.assignment_sensor + 1, model.detected_count + 1);
   oled_.drawStr(x, y + 22, line);
-  draw_temperature(x, y + 35, "Live", model.assignment_temp_c,
-                   model.fahrenheit);
-  snprintf(line, sizeof(line), "ROM ...%s",
-           model.assignment_rom.substring(8).c_str());
-  oled_.drawStr(x, y + 47, line);
+  if (no_sensor_selected) {
+    oled_.drawStr(x, y + 35, "No sensor assigned");
+    oled_.drawStr(x, y + 47, "ROM NONE");
+  } else {
+    draw_temperature(x, y + 35, "Live", model.assignment_temp_c,
+                     model.fahrenheit);
+    snprintf(line, sizeof(line), "ROM ...%s",
+             model.assignment_rom.substring(8).c_str());
+    oled_.drawStr(x, y + 47, line);
+  }
   oled_.drawStr(x, y + 61, "Rotate / press assign");
 }
 

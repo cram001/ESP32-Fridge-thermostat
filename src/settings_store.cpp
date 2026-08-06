@@ -128,7 +128,7 @@ const String ConfigSchema(const SettingsStore&) {
       "circulation_min_on_min":{"title":"Circulation minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
       "emergency_spillover_on_min":{"title":"Get-me-home spillover fan (minutes ON per hour; 0 = OFF)","type":"integer","enum":%EMERGENCY_OPTIONS%},
       "buzzer_enabled":{"title":"Buzzer enabled","type":"boolean"},
-      "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","minimum":%CONTRAST_MIN%,"maximum":%CONTRAST_MAX%,"multipleOf":%CONTRAST_STEP%},
+      "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","enum":%CONTRAST_OPTIONS%},
       "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":%DISPLAY_TIMEOUT_OPTIONS%},
       "fridge_on_left":{"title":"Display fridge on left side","type":"boolean"},
       "fahrenheit":{"title":"Display temperatures in Fahrenheit","type":"boolean"},
@@ -163,9 +163,6 @@ const String ConfigSchema(const SettingsStore&) {
   schema.replace("%FAN_DELAY_STEP_S%", String(hw::kFanDelayStepS));
   schema.replace("%FAN_ON_MIN%", String(hw::kFanMinimumOnMin));
   schema.replace("%FAN_ON_MAX%", String(hw::kFanMinimumOnMax));
-  schema.replace("%CONTRAST_MIN%", String(hw::kOledContrastMinPercent));
-  schema.replace("%CONTRAST_MAX%", String(hw::kOledContrastMaxPercent));
-  schema.replace("%CONTRAST_STEP%", String(hw::kOledContrastStepPercent));
   schema.replace("%CALIBRATION_MIN_C%",
                  String(-hw::kCalibrationLimitC, 1));
   schema.replace("%CALIBRATION_MAX_C%", String(hw::kCalibrationLimitC, 1));
@@ -177,5 +174,9 @@ const String ConfigSchema(const SettingsStore&) {
       "%DISPLAY_TIMEOUT_OPTIONS%",
       JsonNumberArray(hw::kDisplayTimeoutOptions,
                       hw::kDisplayTimeoutOptionCount));
+  schema.replace(
+      "%CONTRAST_OPTIONS%",
+      JsonNumberArray(hw::kOledContrastOptions,
+                      hw::kOledContrastOptionCount));
   return schema;
 }
