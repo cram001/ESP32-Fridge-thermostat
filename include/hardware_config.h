@@ -45,6 +45,9 @@ constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderButtonGuardMs = 750;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
 constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
+// This SEN0502 reports one clockwise count per detent, but two
+// counterclockwise transitions: one between detents and one at the detent.
+constexpr int32_t kEncoderCounterclockwiseCountsPerDetent = 2;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
 // User-editable temperature ranges and increments.
@@ -76,6 +79,6 @@ constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 // Bump the minor number once per firmware PR so the startup screen confirms
 // which merged revision was uploaded: v0.1.0, v0.2.0, ... v0.10.0, etc.
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.6.0";
+constexpr char kFirmwareVersion[] = "v0.7.0";
 
 }  // namespace hw

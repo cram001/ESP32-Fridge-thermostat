@@ -70,6 +70,7 @@ bool settings_dirty = false;
 uint32_t settings_changed_ms = 0;
 bool encoder_input_locked = false;
 uint32_t encoder_quiet_started_ms = 0;
+int32_t encoder_counterclockwise_substeps = 0;
 uint32_t last_button_event_ms = 0;
 bool encoder_button_ready = true;
 
@@ -236,6 +237,7 @@ void update_encoder() {
   const bool raw_button_down = encoder.detectButtonDown();
   if (raw_button_down) {
     encoder.setEncoderValue(hw::kEncoderNeutralValue);
+    encoder_counterclockwise_substeps = 0;
   }
   const uint32_t now = millis();
   const bool raw_activity = raw_delta != 0 || raw_button_down;
@@ -255,14 +257,26 @@ void update_encoder() {
   if (abs(raw_delta) > hw::kEncoderMaxDeltaPerPoll) {
     encoder_input_locked = true;
     encoder_quiet_started_ms = 0;
+    encoder_counterclockwise_substeps = 0;
     return;
   }
 
-  // Treat one observed movement as one UI step. Some SEN0502 units report a
-  // clockwise detent as +1 but the matching counterclockwise detent as -2.
-  // Applying that raw count directly makes menu movement direction-dependent.
-  const int32_t delta =
-      raw_delta > 0 ? 1 : (raw_delta < 0 ? -1 : 0);
+  int32_t delta = 0;
+  if (raw_delta > 0) {
+    // Clockwise already reports one raw count at each physical detent.
+    encoder_counterclockwise_substeps = 0;
+    delta = raw_delta;
+  } else if (raw_delta < 0) {
+    // Counterclockwise reports once between detents and again at the detent.
+    // Accumulate both transitions so the UI moves only on the physical click.
+    const int32_t accumulated_counts =
+        encoder_counterclockwise_substeps - raw_delta;
+    delta = -(accumulated_counts /
+              hw::kEncoderCounterclockwiseCountsPerDetent);
+    encoder_counterclockwise_substeps =
+        accumulated_counts %
+        hw::kEncoderCounterclockwiseCountsPerDetent;
+  }
 
   if (!raw_button_down) encoder_button_ready = true;
   const bool button_down = raw_button_down && encoder_button_ready &&
