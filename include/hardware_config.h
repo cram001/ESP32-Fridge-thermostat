@@ -41,7 +41,18 @@ constexpr uint8_t kOledCsPin = 14;     // D6
 constexpr uint8_t kOledDcPin = 25;     // D2
 constexpr uint8_t kOledResetPin = 26;  // D3
 
-constexpr uint16_t kBuzzerFrequencyHz = 2400;
+// Single persisted buzzer mode used by both the rotary menu and web settings.
+constexpr uint8_t kBuzzerModeOff = 0;
+constexpr uint8_t kBuzzerModeSteady = 1;
+constexpr uint8_t kBuzzerModeDouble = 2;
+constexpr uint8_t kBuzzerModeHiLo = 3;
+constexpr uint8_t kBuzzerModeTriple = 4;
+constexpr uint8_t kBuzzerModeCount = 5;
+constexpr uint8_t kDefaultBuzzerMode = kBuzzerModeHiLo;
+constexpr uint16_t kBuzzerSteadyFrequencyHz = 2400;
+constexpr uint16_t kBuzzerHighFrequencyHz = 2800;
+constexpr uint16_t kBuzzerLowFrequencyHz = 1800;
+
 constexpr uint32_t kTemperaturePeriodMs = 5UL * 1000UL;
 constexpr uint8_t kTemperatureFilterSamples = 6;
 constexpr uint32_t kControlPeriodMs = 250;
@@ -84,6 +95,6 @@ constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 // Bump the minor number once per firmware PR so the startup screen confirms
 // which merged revision was uploaded: v0.1.0, v0.2.0, ... v0.10.0, etc.
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.9.0";
+constexpr char kFirmwareVersion[] = "v0.10.0";
 
 }  // namespace hw
