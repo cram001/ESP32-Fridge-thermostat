@@ -30,9 +30,10 @@ class BuzzerController {
     preview_active_ = true;
     preview_mode_ = mode;
     preview_started_ms_ = now;
-    // Force the first update to apply the new tone immediately.
+    // Force the first update to apply the new tone immediately, starting at
+    // phase zero regardless of system uptime.
     active_frequency_hz_ = UINT16_MAX;
-    update_output(now, mode, true);
+    update_output(0, mode, true);
   }
 
   void update(uint32_t now, bool alarm_should_sound, uint8_t alarm_mode) {
