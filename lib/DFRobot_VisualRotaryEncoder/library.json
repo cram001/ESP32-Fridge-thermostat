@@ -1,0 +1,8 @@
+{
+  "name": "DFRobot_VisualRotaryEncoder",
+  "version": "1.0.1-local.1",
+  "description": "Vendored DFRobot SEN0502 driver with bounded I2C bus recovery for unattended operation.",
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}
