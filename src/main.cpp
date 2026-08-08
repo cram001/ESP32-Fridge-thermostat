@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <DFRobot_VisualRotaryEncoder.h>
 #include <Wire.h>
+#include <esp_task_wdt.h>
 
 #include "buzzer_controller.h"
 #include "fridge_display.h"
@@ -42,6 +43,13 @@ float freezer_safety_c = NAN;
 float ambient_c = NAN;
 bool temperature_sample_ready = false;
 bool temperature_sample_updated = false;
+
+// Advisory stuck-value monitor. This does not alter thermostat control; it
+// simply tells the user when a valid probe has reported no meaningful raw
+// temperature change for an implausibly long period.
+float last_changed_temp_c[3] = {NAN, NAN, NAN};
+uint32_t last_temp_change_ms[3] = {0, 0, 0};
+bool temperature_stuck[3] = {false, false, false};
 
 bool assignment_mode = false;
 uint8_t assignment_role = 0;
@@ -106,6 +114,8 @@ bool encoder_button_ready = true;
 uint8_t encoder_gain = hw::kEncoderNavigationGain;
 uint16_t encoder_baseline_value = hw::kEncoderNeutralValue;
 
+bool task_watchdog_enabled = false;
+
 std::shared_ptr<SKOutput<float>> sk_fridge;
 std::shared_ptr<SKOutput<float>> sk_freezer;
 std::shared_ptr<SKOutput<float>> sk_ambient;
@@ -118,6 +128,18 @@ std::shared_ptr<SKOutput<float>>
     sk_detected_temp[TemperatureManager::kMaxSensors];
 std::shared_ptr<SKOutput<String>>
     sk_detected_rom[TemperatureManager::kMaxSensors];
+
+void setup_task_watchdog() {
+  if (esp_task_wdt_init(hw::kTaskWatchdogTimeoutS, true) != ESP_OK) return;
+
+  esp_err_t status = esp_task_wdt_status(nullptr);
+  if (status == ESP_ERR_NOT_FOUND) status = esp_task_wdt_add(nullptr);
+  task_watchdog_enabled = status == ESP_OK;
+}
+
+void feed_task_watchdog() {
+  if (task_watchdog_enabled) esp_task_wdt_reset();
+}
 
 void write_fan(uint8_t pin, bool on) {
   digitalWrite(pin, on == hw::kFanActiveHigh ? HIGH : LOW);
@@ -250,28 +272,79 @@ void rollback_edit() {
   edit_changed = false;
 }
 
+void update_temperature_stuck_monitor(uint32_t now) {
+  for (uint8_t role = 0; role < 3; ++role) {
+    const bool valid =
+        temperatures.role_status(role) == TemperatureManager::SensorStatus::kOk;
+    const float raw_c = temperatures.role_raw_temperature(role);
+
+    if (!valid || !std::isfinite(raw_c)) {
+      last_changed_temp_c[role] = NAN;
+      last_temp_change_ms[role] = now;
+      temperature_stuck[role] = false;
+      continue;
+    }
+
+    if (!std::isfinite(last_changed_temp_c[role])) {
+      last_changed_temp_c[role] = raw_c;
+      last_temp_change_ms[role] = now;
+      temperature_stuck[role] = false;
+      continue;
+    }
+
+    if (fabsf(raw_c - last_changed_temp_c[role]) >=
+        hw::kTemperatureStuckChangeC) {
+      last_changed_temp_c[role] = raw_c;
+      last_temp_change_ms[role] = now;
+      temperature_stuck[role] = false;
+      continue;
+    }
+
+    temperature_stuck[role] =
+        now - last_temp_change_ms[role] >= hw::kTemperatureStuckTimeoutMs;
+  }
+}
+
+void publish_detected_probe_metadata() {
+  // ROM metadata changes only when the debounced OneWire discovery list
+  // changes. String allocation here is therefore an exceptional configuration
+  // event, not a periodic hot-path operation.
+  for (uint8_t sensor = 0; sensor < TemperatureManager::kMaxSensors; ++sensor) {
+    char rom[17];
+    temperatures.detected_rom_chars(sensor, rom);
+    sk_detected_rom[sensor]->set(String(rom));
+  }
+}
+
 void read_temperatures() {
   if (!temperatures.poll(assigned_rom, calibration_c,
                          hw::kTemperaturePeriodMs)) {
     return;
   }
 
+  const uint32_t now = millis();
   fridge_c = temperatures.role_temperature(0);
   freezer_c = temperatures.role_temperature(1);
   freezer_safety_c = temperatures.role_raw_temperature(1);
   ambient_c = temperatures.role_temperature(2);
   temperature_sample_ready = true;
   temperature_sample_updated = true;
+  update_temperature_stuck_monitor(now);
 
   sk_fridge->set(std::isfinite(fridge_c) ? fridge_c + 273.15f : NAN);
   sk_freezer->set(std::isfinite(freezer_c) ? freezer_c + 273.15f : NAN);
   sk_ambient->set(std::isfinite(ambient_c) ? ambient_c + 273.15f : NAN);
 
-  for (uint8_t sensor = 0; sensor < temperatures.detected_count(); ++sensor) {
-    const float detected_c = temperatures.detected_temperature(sensor);
+  const uint8_t count = temperatures.detected_count();
+  for (uint8_t sensor = 0; sensor < TemperatureManager::kMaxSensors; ++sensor) {
+    const float detected_c =
+        sensor < count ? temperatures.detected_temperature(sensor) : NAN;
     sk_detected_temp[sensor]->set(
         std::isfinite(detected_c) ? detected_c + 273.15f : NAN);
-    sk_detected_rom[sensor]->set(temperatures.detected_rom(sensor));
+  }
+
+  if (temperatures.take_discovery_changed()) {
+    publish_detected_probe_metadata();
   }
 }
 
@@ -290,6 +363,12 @@ void update_controller() {
   faults.set(FaultCode::kFreezerRange, freezer_status == Status::kOutOfRange);
   faults.set(FaultCode::kAmbientMissing, ambient_status == Status::kMissing);
   faults.set(FaultCode::kAmbientRange, ambient_status == Status::kOutOfRange);
+  faults.set(FaultCode::kFridgeStuck,
+             fridge_status == Status::kOk && temperature_stuck[0]);
+  faults.set(FaultCode::kFreezerStuck,
+             freezer_status == Status::kOk && temperature_stuck[1]);
+  faults.set(FaultCode::kAmbientStuck,
+             ambient_status == Status::kOk && temperature_stuck[2]);
   faults.set(FaultCode::kEncoderOffline, !encoder_available);
   faults.set(FaultCode::kEncoderErratic, encoder_input_locked);
 
@@ -462,11 +541,6 @@ bool encoder_bus_present() {
   return Wire.endTransmission() == 0;
 }
 
-// Runs on kEncoderHealthCheckIntervalMs regardless of the last known state,
-// so a dropped encoder is detected (update_encoder() then stops touching the
-// bus at all, since it early-returns on !encoder_available) and a
-// reconnected encoder is re-initialized rather than left offline until the
-// next reboot.
 void check_encoder_health(uint32_t now) {
   if (now - last_encoder_health_check_ms < hw::kEncoderHealthCheckIntervalMs) {
     return;
@@ -477,12 +551,10 @@ void check_encoder_health(uint32_t now) {
   if (present == encoder_available) return;
 
   if (present) {
-    // The device does not retain gain/count state through a bus dropout, so
-    // re-run the real init sequence rather than just flipping the flag.
     encoder_available = encoder.begin() == NO_ERR;
     if (encoder_available) {
       set_encoder_navigation_mode();
-      encoder.detectButtonDown();  // Clear any stale button edge.
+      encoder.detectButtonDown();
     }
   } else {
     if (menu_editing) rollback_edit();
@@ -661,7 +733,8 @@ void update_encoder() {
       assigned_rom[assignment_role] = "";
       save_settings();
     } else {
-      const String selected_rom = temperatures.detected_rom(assignment_sensor);
+      char selected_rom[17];
+      temperatures.detected_rom_chars(assignment_sensor, selected_rom);
       for (uint8_t role = 0; role < 3; ++role) {
         if (role != assignment_role &&
             assigned_rom[role].equalsIgnoreCase(selected_rom)) {
@@ -719,8 +792,9 @@ void update_encoder() {
         const uint8_t detected_count = temperatures.detected_count();
         assignment_sensor = detected_count;
         for (uint8_t sensor = 0; sensor < detected_count; ++sensor) {
-          if (assigned_rom[assignment_role].equalsIgnoreCase(
-                  temperatures.detected_rom(sensor))) {
+          char sensor_rom[17];
+          temperatures.detected_rom_chars(sensor, sensor_rom);
+          if (assigned_rom[assignment_role].equalsIgnoreCase(sensor_rom)) {
             assignment_sensor = sensor;
             break;
           }
@@ -934,10 +1008,10 @@ void update_display() {
       assignment_sensor < count
           ? temperatures.detected_temperature(assignment_sensor)
           : NAN;
-  const String assignment_rom =
-      assignment_sensor < count
-          ? temperatures.detected_rom(assignment_sensor)
-          : String();
+  char assignment_rom[17] = {};
+  if (assignment_sensor < count) {
+    temperatures.detected_rom_chars(assignment_sensor, assignment_rom);
+  }
 
   const uint8_t fault_count = faults.count();
   if (fault_count == 0 || selected_error >= fault_count) selected_error = 0;
@@ -989,7 +1063,9 @@ void setup_signalk() {
   sk_alarm = std::make_shared<SKOutput<bool>>(
       "notifications.fridge.temperatureAlarm", "/Fridge/TemperatureAlarm");
 
-  for (uint8_t sensor = 0; sensor < temperatures.detected_count(); ++sensor) {
+  // Allocate all possible outputs once during setup. Runtime sensor discovery
+  // then needs no new heap objects when a probe is replaced or reconnected.
+  for (uint8_t sensor = 0; sensor < TemperatureManager::kMaxSensors; ++sensor) {
     const String number(sensor + 1);
     const String base_path =
         String("environment.inside.refrigerator.detectedProbe") + number;
@@ -1039,6 +1115,10 @@ void setup() {
   setup_signalk();
   sensesp_app->start();
 
+  // setup() runs under the Arduino loop task after the FreeRTOS scheduler has
+  // started, which is the required context for subscribing this task to TWDT.
+  setup_task_watchdog();
+
   splash_started_ms = millis();
   const uint8_t splash_seconds = static_cast<uint8_t>(
       (hw::kSplashDurationMs + 999UL) / 1000UL);
@@ -1049,6 +1129,7 @@ void setup() {
 }
 
 void loop() {
+  feed_task_watchdog();
   event_loop()->tick();
   const uint32_t now = millis();
 
