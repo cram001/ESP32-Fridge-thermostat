@@ -212,7 +212,39 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   }
   oled_.setFont(u8g2_font_5x7_tf);
   const int ambient_w = oled_.getStrWidth(ambient_text);
-  oled_.drawStr(x + 125 - ambient_w, y + 9, ambient_text);
+  const int ambient_x = x + 125 - ambient_w;
+  oled_.drawStr(ambient_x, y + 9, ambient_text);
+
+  // Operational-mode banner. GET-HOME means the fridge probe is failed and a
+  // non-zero emergency duty cycle is selected. LOCKOUT means the freezer is
+  // still above its lockout threshold, so normal spillover is inhibited.
+  const bool get_home_mode =
+      model.control->sensor_fault &&
+      model.settings->emergency_spillover_on_min != 0;
+  const bool freezer_lockout = model.control->freezer_lockout;
+  const char* banner = nullptr;
+  if (get_home_mode && freezer_lockout) {
+    // Both states matter. Alternate rather than hiding either one.
+    banner = ((millis() / 2000UL) % 2U == 0U) ? "LOCKOUT" : "GET-HOME";
+  } else if (freezer_lockout) {
+    banner = "LOCKOUT";
+  } else if (get_home_mode) {
+    banner = "GET-HOME";
+  }
+
+  if (banner != nullptr) {
+    oled_.setFont(u8g2_font_5x7_tf);
+    const int text_w = oled_.getStrWidth(banner);
+    const int frame_w = text_w + 6;
+    const int available_left = x + 34;  // clear of Wi-Fi + fault triangle
+    const int available_right = ambient_x - 3;
+    if (available_right - available_left >= frame_w) {
+      const int frame_x =
+          available_left + (available_right - available_left - frame_w) / 2;
+      oled_.drawRFrame(frame_x, y + 1, frame_w, 10, 2);
+      oled_.drawStr(frame_x + 3, y + 8, banner);
+    }
+  }
 
   const uint8_t left_role = model.settings->fridge_on_left ? 0 : 1;
   const uint8_t right_role = model.settings->fridge_on_left ? 1 : 0;
