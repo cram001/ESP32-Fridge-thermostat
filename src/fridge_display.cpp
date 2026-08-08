@@ -1,5 +1,7 @@
 #include "fridge_display.h"
 
+#include "cerbo_mqtt.h"
+
 namespace {
 constexpr uint8_t kSettingCount = 23;
 constexpr uint8_t kLayoutSetting = 17;
@@ -203,10 +205,30 @@ void FridgeDisplay::draw_warning_triangle(int x, int y) {
 
 void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   // Fixed top-row zones:
-  // [ Signal K ] [ LOCKOUT / GET-HOME ] [ warning ] [ ambient ]
-  // Keeping these regions stable prevents mode banners and fault indication
-  // from ever drawing on top of each other.
+  // [ Signal K ] [ MQTT ] [ LOCKOUT / GET-HOME ] [ warning ] [ ambient ]
+  // MQTT is omitted entirely when disabled. The ambient temperature keeps the
+  // existing 5x7 font and right-aligned position; only the left-side status
+  // zones move to make room for the new connection icon.
   draw_wifi_icon(x + 9, y + 9, model.signalk_connected);
+
+  const CerboMqttPublisher& mqtt = cerbo_mqtt_publisher();
+  if (mqtt.enabled()) {
+    // Compact broker/network glyph: three edge nodes converging on a center
+    // broker. A diagonal strike-through means configured but disconnected.
+    constexpr int kMqttCenterX = 23;
+    const int mx = x + kMqttCenterX;
+    const int my = y + 6;
+    oled_.drawDisc(mx, my, 1);
+    oled_.drawDisc(mx - 4, my - 4, 1);
+    oled_.drawDisc(mx + 4, my - 4, 1);
+    oled_.drawDisc(mx, my + 4, 1);
+    oled_.drawLine(mx - 3, my - 3, mx - 1, my - 1);
+    oled_.drawLine(mx + 3, my - 3, mx + 1, my - 1);
+    oled_.drawLine(mx, my + 1, mx, my + 3);
+    if (!mqtt.connected()) {
+      oled_.drawLine(mx - 5, my - 5, mx + 5, my + 5);
+    }
+  }
 
   char ambient_text[8];
   const float ambient =
@@ -224,7 +246,7 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   oled_.drawStr(ambient_x, y + 9, ambient_text);
 
   constexpr int kWarningTriangleX = 84;
-  constexpr int kBannerLeft = 22;
+  constexpr int kBannerLeft = 31;
   constexpr int kBannerRight = 81;
 
   // Operational-mode banner. GET-HOME means the fridge probe is failed and a
