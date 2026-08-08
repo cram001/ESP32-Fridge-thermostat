@@ -409,11 +409,6 @@ void update_controller() {
   sk_alarm->set(alarm_active);
 }
 
-float gauge_fraction(float value, float minimum, float maximum) {
-  if (maximum <= minimum) return 0.5f;
-  return constrain((value - minimum) / (maximum - minimum), 0.0f, 1.0f);
-}
-
 uint8_t option_index(const uint8_t* options, uint8_t count, uint8_t value) {
   if (count == 0) return 0;
   for (uint8_t i = 0; i < count; ++i) {
@@ -635,7 +630,7 @@ void update_encoder() {
   if (!menu_active) {
     last_menu_activity_ms = 0;
     if (menu_editing) {
-      if (menu_editing) rollback_edit();
+      rollback_edit();
       menu_editing = false;
       edit_changed = false;
       set_encoder_navigation_mode();
