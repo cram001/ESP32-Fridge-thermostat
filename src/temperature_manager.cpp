@@ -199,7 +199,12 @@ void TemperatureManager::collect(const String assigned_rom[kRoleCount],
                                  const float calibration_c[kRoleCount]) {
   for (uint8_t i = 0; i < detected_count_; ++i) {
     const float value = bus_.getTempC(detected_roms_[i]);
-    detected_temp_c_[i] = value == DEVICE_DISCONNECTED_C ? NAN : value;
+    if (value == DEVICE_DISCONNECTED_C ||
+        fabsf(value - hw::kDs18b20PowerOnResetC) < 0.01f) {
+      detected_temp_c_[i] = NAN;
+    } else {
+      detected_temp_c_[i] = value;
+    }
   }
 
   for (uint8_t role = 0; role < kRoleCount; ++role) {
