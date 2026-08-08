@@ -1,12 +1,18 @@
 #include "temperature_manager.h"
 
+#include <strings.h>  // strcasecmp
+
 TemperatureManager::TemperatureManager(uint8_t pin)
     : one_wire_(pin), bus_(&one_wire_) {}
 
+void TemperatureManager::rom_to_chars(const DeviceAddress rom, char out[17]) {
+  for (uint8_t i = 0; i < 8; ++i) snprintf(out + i * 2, 3, "%02X", rom[i]);
+  out[16] = 0;
+}
+
 String TemperatureManager::rom_to_string(const DeviceAddress rom) {
   char text[17];
-  for (uint8_t i = 0; i < 8; ++i) snprintf(text + i * 2, 3, "%02X", rom[i]);
-  text[16] = 0;
+  rom_to_chars(rom, text);
   return String(text);
 }
 
@@ -84,8 +90,9 @@ void TemperatureManager::collect(const String assigned_rom[kRoleCount],
       filter_calibration_c_[role] = calibration_c[role];
     }
     for (uint8_t sensor = 0; sensor < detected_count_; ++sensor) {
-      if (assigned_rom[role].equalsIgnoreCase(
-              rom_to_string(detected_roms_[sensor]))) {
+      char sensor_rom[17];
+      rom_to_chars(detected_roms_[sensor], sensor_rom);
+      if (strcasecmp(assigned_rom[role].c_str(), sensor_rom) == 0) {
         if (std::isfinite(detected_temp_c_[sensor])) {
           const float calibrated =
               detected_temp_c_[sensor] + calibration_c[role];

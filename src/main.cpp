@@ -48,6 +48,7 @@ uint8_t assignment_role = 0;
 uint8_t assignment_sensor = 0;
 
 bool encoder_available = false;
+uint32_t last_encoder_health_check_ms = 0;
 uint8_t selected_setting = 0;
 bool menu_editing = false;
 bool edit_changed = false;
@@ -407,6 +408,47 @@ void set_encoder_navigation_mode() {
   encoder.setGainCoefficient(encoder_gain);
   encoder.setEncoderValue(encoder_baseline_value);
   encoder_counterclockwise_substeps = 0;
+}
+
+// Lightweight I2C presence probe: address-only transaction, no register
+// read, so it never disturbs the encoder's count/gain state.
+bool encoder_bus_present() {
+  Wire.beginTransmission(hw::kEncoderAddress);
+  return Wire.endTransmission() == 0;
+}
+
+// Runs on kEncoderHealthCheckIntervalMs regardless of the last known state,
+// so a dropped encoder is detected (update_encoder() then stops touching the
+// bus at all, since it early-returns on !encoder_available) and a
+// reconnected encoder is re-initialized rather than left offline until the
+// next reboot.
+void check_encoder_health(uint32_t now) {
+  if (now - last_encoder_health_check_ms < hw::kEncoderHealthCheckIntervalMs) {
+    return;
+  }
+  last_encoder_health_check_ms = now;
+
+  const bool present = encoder_bus_present();
+  if (present == encoder_available) return;
+
+  if (present) {
+    // The device does not retain gain/count state through a bus dropout, so
+    // re-run the real init sequence rather than just flipping the flag.
+    encoder_available = encoder.begin() == NO_ERR;
+    if (encoder_available) {
+      set_encoder_navigation_mode();
+      encoder.detectButtonDown();  // Clear any stale button edge.
+    }
+  } else {
+    encoder_available = false;
+    encoder_input_locked = false;
+    encoder_quiet_started_ms = 0;
+    if (output_test_active) stop_output_test();
+    output_test_mode = false;
+    assignment_mode = false;
+    menu_editing = false;
+    edit_changed = false;
+  }
 }
 
 void set_encoder_gauge_mode() {
@@ -999,6 +1041,7 @@ void loop() {
 
   if (now - last_control_ms >= hw::kControlPeriodMs) {
     last_control_ms = now;
+    check_encoder_health(now);
     update_encoder();
     update_controller();
     service_output_test(now);

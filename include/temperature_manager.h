@@ -41,6 +41,12 @@ class TemperatureManager {
   enum class ConversionState : uint8_t { kIdle, kWaiting };
 
   static String rom_to_string(const DeviceAddress rom);
+  // Fills a caller-owned 17-byte buffer with the hex ROM string. Used on the
+  // ~5s poll hot path so matching a role to a detected sensor never
+  // allocates on the heap -- important on a long-running embedded device
+  // where repeated small String allocations can fragment the heap over
+  // weeks/months of uptime.
+  static void rom_to_chars(const DeviceAddress rom, char out[17]);
   void reset_filter(uint8_t role);
   void add_filter_sample(uint8_t role, float value);
   void collect(const String assigned_rom[kRoleCount],
