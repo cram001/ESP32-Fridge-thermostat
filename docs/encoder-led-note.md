@@ -8,7 +8,7 @@ on the physical hardware.
 Firmware therefore **does not use the LED ring as a setting gauge**. Menu
 navigation and value editing both use the same stable gain-1 encoder behavior,
 with the count returned to a small neutral value after movement. The ring is
-left effectively inactive.
+left effectively inactive by design.
 
 Counterclockwise movement on this hardware produces two transitions per physical
 detent; firmware retains the proven compensation that collapses those two
