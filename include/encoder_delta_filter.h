@@ -6,7 +6,8 @@
 // Filters SEN0502 encoder reads when firmware reprograms the encoder value to
 // reposition the LED gauge. The module may briefly return the previous value
 // after setEncoderValue(); those stale readbacks must never be interpreted as
-// user rotation.
+// user rotation. Only complete gain-sized movements are accepted in gauge
+// mode, so programmatic LED remapping cannot become a multi-step setting jump.
 class EncoderDeltaFilter {
  public:
   void reset(uint16_t baseline, uint8_t gain) {
