@@ -1,0 +1,139 @@
+name: Apply encoder rebaseline fix
+
+on:
+  push:
+    branches:
+      - agent/v0.11.1-transactional-edit-status-banners
+    paths:
+      - .github/workflows/apply-encoder-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v0.11.1-transactional-edit-status-banners
+          fetch-depth: 0
+
+      - name: Patch runtime and UI
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_exact(
+              "src/main.cpp",
+              '#include "buzzer_controller.h"\n#include "fridge_display.h"',
+              '#include "buzzer_controller.h"\n#include "encoder_delta_filter.h"\n#include "fridge_display.h"')
+
+          replace_exact(
+              "src/main.cpp",
+              'DFRobot_VisualRotaryEncoder_I2C encoder(hw::kEncoderAddress, &Wire);\nControllerSettings settings;',
+              'DFRobot_VisualRotaryEncoder_I2C encoder(hw::kEncoderAddress, &Wire);\nEncoderDeltaFilter encoder_delta_filter;\nControllerSettings settings;')
+
+          replace_exact(
+              "src/main.cpp",
+              '''void set_encoder_navigation_mode() {
+            if (!encoder_available) return;
+            encoder_gain = hw::kEncoderNavigationGain;
+            encoder_baseline_value = hw::kEncoderNeutralValue;
+            encoder.setGainCoefficient(encoder_gain);
+            encoder.setEncoderValue(encoder_baseline_value);
+            encoder_counterclockwise_substeps = 0;
+          }''',
+              '''void set_encoder_navigation_mode() {
+            if (!encoder_available) return;
+            encoder_gain = hw::kEncoderNavigationGain;
+            encoder_baseline_value = hw::kEncoderNeutralValue;
+            encoder.setGainCoefficient(encoder_gain);
+            encoder.setEncoderValue(encoder_baseline_value);
+            encoder_delta_filter.program_baseline(encoder_baseline_value, encoder_gain);
+            encoder_counterclockwise_substeps = 0;
+          }''')
+
+          replace_exact(
+              "src/main.cpp",
+              '''void set_encoder_gauge_mode() {
+            if (!encoder_available) return;
+            if (!setting_supports_encoder_gauge(selected_setting)) {
+              set_encoder_navigation_mode();
+              return;
+            }
+
+            encoder_gain = hw::kEncoderGaugeGain;
+            encoder_baseline_value = selected_setting_gauge_value();
+            encoder.setGainCoefficient(encoder_gain);
+            encoder.setEncoderValue(encoder_baseline_value);
+            encoder_counterclockwise_substeps = 0;
+          }''',
+              '''void set_encoder_gauge_mode() {
+            if (!encoder_available) return;
+            if (!setting_supports_encoder_gauge(selected_setting)) {
+              set_encoder_navigation_mode();
+              return;
+            }
+
+            encoder_gain = hw::kEncoderGaugeGain;
+            encoder_baseline_value = selected_setting_gauge_value();
+            encoder.setGainCoefficient(encoder_gain);
+            encoder.setEncoderValue(encoder_baseline_value);
+            encoder_delta_filter.program_baseline(encoder_baseline_value, encoder_gain);
+            encoder_counterclockwise_substeps = 0;
+          }''')
+
+          replace_exact(
+              "src/main.cpp",
+              '''int32_t read_encoder_delta() {
+            const int32_t position = encoder.getEncoderValue();
+            int32_t delta = position - static_cast<int32_t>(encoder_baseline_value);
+            if (delta != 0) {
+              encoder.setEncoderValue(encoder_baseline_value);
+            }
+
+            if (encoder_gain > 1 && abs(delta) >= encoder_gain) {
+              delta /= static_cast<int32_t>(encoder_gain);
+            }
+            return delta;
+          }''',
+              '''int32_t read_encoder_delta() {
+            const int32_t position = encoder.getEncoderValue();
+            const int32_t delta = encoder_delta_filter.decode(position);
+            if (position != static_cast<int32_t>(encoder_baseline_value)) {
+              encoder.setEncoderValue(encoder_baseline_value);
+            }
+            return delta;
+          }''')
+
+          replace_exact(
+              "src/fridge_display.cpp",
+              'draw_fan(x + 34, y + 57, fan_phase);',
+              'draw_fan(x + 37, y + 57, fan_phase);')
+          replace_exact(
+              "src/fridge_display.cpp",
+              'draw_fan(x + 96, y + 57, fan_phase);',
+              'draw_fan(x + 99, y + 57, fan_phase);')
+
+          replace_exact(
+              "include/hardware_config.h",
+              'constexpr char kFirmwareVersion[] = "v0.12.1";',
+              'constexpr char kFirmwareVersion[] = "v0.12.2";')
+
+      - name: Commit generated patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-encoder-fix.yml
+          git add src/main.cpp src/fridge_display.cpp include/hardware_config.h
+          git commit -m "Fix encoder gauge rebaseline jumps and fan icon spacing"
+          git push origin HEAD:agent/v0.11.1-transactional-edit-status-banners
