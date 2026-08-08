@@ -506,11 +506,11 @@ void FridgeDisplay::draw(const DisplayModel& model) {
     draw_assignment(x, y, model);
   } else if (showing_errors) {
     draw_errors(x, y, model);
+  } else if (model.alarm_active) {
+    draw_alarm(model);
   } else if (model.menu_active && model.menu_editing &&
              model.selected_setting == kAboutSetting) {
     draw_about(x, y);
-  } else if (model.alarm_active) {
-    draw_alarm(model);
   } else if (model.menu_active) {
     draw_menu(x, y, model);
   } else {
