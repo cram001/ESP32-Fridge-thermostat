@@ -54,3 +54,8 @@ class CerboMqttPublisher {
   uint32_t reconnect_delay_ms_ = kReconnectMinMs;
   bool publish_due_ = false;
 };
+
+// Single application-wide publisher instance. Keeping the publisher in one
+// place lets the display report live MQTT state without duplicating connection
+// state, while the main application can configure/service the same instance.
+CerboMqttPublisher& cerbo_mqtt_publisher();
