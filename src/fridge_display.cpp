@@ -1,10 +1,11 @@
 #include "fridge_display.h"
 
 namespace {
-constexpr uint8_t kSettingCount = 21;
+constexpr uint8_t kSettingCount = 22;
 constexpr uint8_t kLayoutSetting = 17;
-constexpr uint8_t kFirstAssignmentSetting = 18;
-constexpr uint8_t kLastAssignmentSetting = 20;
+constexpr uint8_t kOutputTestSetting = 18;
+constexpr uint8_t kFirstAssignmentSetting = 19;
+constexpr uint8_t kLastAssignmentSetting = 21;
 }
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
@@ -67,6 +68,47 @@ void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
   snprintf(status, sizeof(status), "%us", seconds_remaining);
   const int countdown_width = oled_.getStrWidth(status);
   oled_.drawStr(127 - countdown_width, 63, status);
+  oled_.sendBuffer();
+}
+
+void FridgeDisplay::draw_saved() {
+  oled_.clearBuffer();
+  oled_.setFont(u8g2_font_helvB12_tf);
+  const char* text = "SAVED";
+  const int width = oled_.getStrWidth(text);
+  oled_.drawStr((128 - width) / 2, 36, text);
+  oled_.sendBuffer();
+}
+
+void FridgeDisplay::draw_output_test(uint8_t selection, bool active,
+                                     uint8_t seconds_remaining) {
+  static const char* names[] = {"SPILLOVER", "CIRCULATION", "BUZZER", "EXIT"};
+  selection = constrain(selection, static_cast<uint8_t>(0),
+                        static_cast<uint8_t>(3));
+  oled_.clearBuffer();
+  oled_.setFont(u8g2_font_6x10_tf);
+  oled_.drawStr(2, 10, "OUTPUT TEST");
+
+  if (active) {
+    oled_.setFont(u8g2_font_helvB10_tf);
+    const int name_width = oled_.getStrWidth(names[selection]);
+    oled_.drawStr((128 - name_width) / 2, 29, names[selection]);
+    oled_.setFont(u8g2_font_6x10_tf);
+    char line[20];
+    snprintf(line, sizeof(line), "RUNNING  %us", seconds_remaining);
+    const int line_width = oled_.getStrWidth(line);
+    oled_.drawStr((128 - line_width) / 2, 44, line);
+    oled_.drawStr(24, 60, "Press to stop");
+    oled_.sendBuffer();
+    return;
+  }
+
+  for (uint8_t item = 0; item < 4; ++item) {
+    char line[20];
+    snprintf(line, sizeof(line), "%c %s", item == selection ? '>' : ' ',
+             names[item]);
+    oled_.drawStr(2, 22 + item * 12, line);
+  }
   oled_.sendBuffer();
 }
 
@@ -180,8 +222,6 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   oled_.drawStr(x + 2, y + 19, role_labels[left_role]);
   oled_.drawStr(x + 66, y + 19, role_labels[right_role]);
 
-  // Use one font for both readings so their size does not change
-  // independently as the number of digits or sign changes.
   const uint8_t* hero_font = u8g2_font_logisoso20_tf;
   constexpr int kHeroColumnWidth = 61;
   oled_.setFont(u8g2_font_helvB08_tf);
@@ -327,6 +367,9 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     t.name = "Display layout";
     snprintf(t.value, sizeof(t.value), "%s",
              model.settings->fridge_on_left ? "FRDG | FRZ" : "FRZ | FRDG");
+  } else if (model.selected_setting == kOutputTestSetting) {
+    t.name = "Test outputs";
+    snprintf(t.value, sizeof(t.value), "Press to open");
   } else if (model.selected_setting >= kFirstAssignmentSetting &&
              model.selected_setting <= kLastAssignmentSetting) {
     const char* roles[] = {"Assign fridge", "Assign freezer",
@@ -407,8 +450,6 @@ void FridgeDisplay::draw(const DisplayModel& model) {
       !model.alarm_active && !model.menu_active;
   if (showing_home && model.fault_count > 0 &&
       millis() % 2000UL < 650UL) {
-    // Place the fault indicator immediately right of the connection icon,
-    // leaving the top-right ambient temperature unobstructed.
     draw_warning_triangle(x + 20, y + 1);
   }
   oled_.sendBuffer();
