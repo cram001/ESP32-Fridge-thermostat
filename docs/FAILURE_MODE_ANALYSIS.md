@@ -21,6 +21,7 @@ limits.
 | Fridge probe missing + GET-HOME | Timed spillover duty cycle | Valid warm freezer still blocks spillover | No real fridge-temperature control while probe is failed |
 | Freezer probe missing/invalid | Active error; fridge control continues | Fridge remains controlled | Freezer lockout and freezer-temperature alarm are unavailable |
 | DS18B20 reports +85°C reset value | Reading rejected as invalid immediately | Avoids accepting the sensor power-on/reset register value as real temperature | A real +85°C compartment temperature is intentionally outside this application's accepted behavior |
+| Assigned sensor has transient read/CRC failures | Most recent good sample retained briefly | Two failed 5-second reads are tolerated | Third failure or ~15 s without a good sample marks role read-failed |
 | Spillover fan mechanically/electrically fails OFF | Controller continues commanding ON | Fridge high-temperature alarm can occur; >60 min commanded-run fault occurs | No direct proof that fan failed; detection depends on resulting temperatures/time |
 | Spillover fan/MOSFET stuck ON | Controller may command OFF | Temperature/lockout alarms may eventually reveal consequences | **No direct detection with current hardware** |
 | Circulation fan fails OFF | Controller still commands circulation | Fridge temperature control may still function | **No direct detection with current hardware** |
@@ -57,9 +58,9 @@ probe, but cannot infer freezer temperature from the fridge probe alone.
 ### DS18B20 +85°C power-on/reset value
 
 The DS18B20 temperature register powers up at +85°C. For this refrigerator
-controller, +85°C is not a plausible compartment value, so firmware v0.12.1
-rejects it immediately as an invalid reading instead of accepting it as a real
-temperature and waiting for the 30-minute unchanged-value advisory.
+controller, +85°C is not a plausible compartment value, so firmware rejects it
+immediately as an invalid reading rather than accepting a reset scratchpad value
+as real temperature.
 
 ### Ambient probe failure
 
@@ -71,15 +72,35 @@ CRC-valid samples remain healthy even if the numeric value is unchanged for hour
 ### Sensor input validity and freshness
 
 Each assigned role is healthy only while its ROM is present and recent valid
-samples continue to arrive. DallasTemperature validates the scratchpad CRC; the
-firmware also rejects the DS18B20 +85 C power-on value and implausible range. Two
-transient failed 5-second reads are tolerated using the most recent good sample.
-A third failed read, or 15 seconds without a good sample, changes the role to
-`read failed`. One subsequent good sample recovers automatically.
+samples continue to arrive. Runtime discovery performs a direct OneWire ROM
+search, validates the ROM CRC, and accepts the DS18B20 family used by this
+controller. DallasTemperature validates the scratchpad CRC during temperature
+reads. The firmware also rejects failed/disconnected reads, the DS18B20 +85°C
+power-on value, and readings outside the supported physical range.
+
+Two transient failed 5-second reads are tolerated using the most recent known-
+good sample. A third failed read, or approximately 15 seconds without a good
+sample, changes the role to `read failed`. One subsequent good sample recovers
+automatically.
 
 Numeric movement is deliberately not a validity requirement. A refrigerator,
-freezer, or cabin can legitimately remain on the same 0.25 C 10-bit reading for
-hours, so an unchanged-value alarm produces false positives and is not used.
+freezer, or cabin can legitimately remain on the same 0.25°C 10-bit reading for
+hours, so an unchanged-value alarm would produce false positives and is not
+used.
+
+### Runtime discovery / reconnect
+
+DallasTemperature caches its device count during `begin()`, so runtime recovery
+does not use that cached count or indexed discovery. The firmware performs a
+direct OneWire ROM search every five seconds and requires two matching scans
+before committing a changed list. This allows hot-plugged, reconnected, and
+replacement DS18B20s to appear without rebooting while still rejecting a single
+noisy scan. Newly committed probes are explicitly configured to 10-bit
+resolution before their readings are relied upon.
+
+Saved role assignments are independent of current bus presence. Disconnecting a
+probe does not erase its ROM assignment; reconnecting the same ROM restores the
+role automatically once discovery and valid samples resume.
 
 ## Fan failure cases
 
@@ -165,16 +186,11 @@ freezer-protection lockout.
 
 ## Running the simulations
 
-Run both the controller unit tests and failure-mode simulations with:
+Run the controller unit tests, failure-mode simulations, and sensor-health tests
+with:
 
 ```sh
 ./tools/run-native-tests.sh
-```
-
-A successful failure-mode run ends with:
-
-```text
-All failure-mode simulations passed; 5 expected hardware-observability limitations reproduced
 ```
 
 `LIMITATION:` lines are expected results, not test failures. They document
