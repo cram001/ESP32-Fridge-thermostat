@@ -4,6 +4,7 @@
 #include <esp_task_wdt.h>
 
 #include "buzzer_controller.h"
+#include "encoder_delta_filter.h"
 #include "fridge_display.h"
 #include "fridge_controller.h"
 #include "fault_manager.h"
@@ -20,6 +21,7 @@ using namespace sensesp;
 namespace {
 
 DFRobot_VisualRotaryEncoder_I2C encoder(hw::kEncoderAddress, &Wire);
+EncoderDeltaFilter encoder_delta_filter;
 ControllerSettings settings;
 float calibration_c[3] = {0.0f, 0.0f, 0.0f};
 bool display_fahrenheit = false;
@@ -502,6 +504,7 @@ void set_encoder_navigation_mode() {
   encoder_baseline_value = hw::kEncoderNeutralValue;
   encoder.setGainCoefficient(encoder_gain);
   encoder.setEncoderValue(encoder_baseline_value);
+  encoder_delta_filter.program_baseline(encoder_baseline_value, encoder_gain);
   encoder_counterclockwise_substeps = 0;
 }
 
@@ -549,18 +552,15 @@ void set_encoder_gauge_mode() {
   encoder_baseline_value = selected_setting_gauge_value();
   encoder.setGainCoefficient(encoder_gain);
   encoder.setEncoderValue(encoder_baseline_value);
+  encoder_delta_filter.program_baseline(encoder_baseline_value, encoder_gain);
   encoder_counterclockwise_substeps = 0;
 }
 
 int32_t read_encoder_delta() {
   const int32_t position = encoder.getEncoderValue();
-  int32_t delta = position - static_cast<int32_t>(encoder_baseline_value);
-  if (delta != 0) {
+  const int32_t delta = encoder_delta_filter.decode(position);
+  if (position != static_cast<int32_t>(encoder_baseline_value)) {
     encoder.setEncoderValue(encoder_baseline_value);
-  }
-
-  if (encoder_gain > 1 && abs(delta) >= encoder_gain) {
-    delta /= static_cast<int32_t>(encoder_gain);
   }
   return delta;
 }

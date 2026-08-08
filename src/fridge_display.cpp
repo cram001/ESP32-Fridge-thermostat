@@ -301,13 +301,13 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   const uint8_t fan_phase = (millis() / 200) % 6;
   oled_.drawStr(x + 2, y + 62, "SPILL");
   if (model.control->spillover) {
-    draw_fan(x + 34, y + 57, fan_phase);
+    draw_fan(x + 37, y + 57, fan_phase);
   } else {
     oled_.drawStr(x + 31, y + 62, "-");
   }
   oled_.drawStr(x + 68, y + 62, "CIRC");
   if (model.control->circulation) {
-    draw_fan(x + 96, y + 57, fan_phase);
+    draw_fan(x + 99, y + 57, fan_phase);
   } else {
     oled_.drawStr(x + 93, y + 62, "-");
   }
