@@ -21,7 +21,7 @@ struct DisplayModel {
   uint8_t assignment_sensor;
   uint8_t detected_count;
   float assignment_temp_c;
-  String assignment_rom;
+  const char* assignment_rom;
   uint8_t fault_count;
   uint8_t fault_code;
   const char* fault_message;
@@ -52,8 +52,8 @@ class FridgeDisplay {
   float shown_temperature(float celsius, bool fahrenheit) const;
   SettingText build_setting_text(const DisplayModel& model) const;
 
-  // Screen states. Exactly one runs per frame; the fault triangle is a
-  // home-screen-only overlay -- see the dispatch in draw().
+  // Screen states. Exactly one runs per frame; the fault triangle is rendered
+  // inside draw_home() so it shares the fixed top-row layout.
   void draw_home(int x, int y, const DisplayModel& model);
   void draw_alarm(const DisplayModel& model);
   void draw_menu(int x, int y, const DisplayModel& model);
