@@ -24,7 +24,7 @@ class CerboMqttPublisher {
   void service(uint32_t now, float fridge_c, float freezer_c, float ambient_c);
 
   bool enabled() const { return publish_interval_ms_ != 0 && host_[0] != '\0'; }
-  bool connected() const { return enabled() && mqtt_.connected(); }
+  bool connected() { return enabled() && mqtt_.connected(); }
 
   // Force the next successful service cycle to publish immediately.
   void request_publish() { publish_due_ = true; }
