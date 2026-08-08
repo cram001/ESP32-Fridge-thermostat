@@ -9,6 +9,12 @@ namespace {
 constexpr char kFridgeTopic[] = "marinefridge/fridge/temperature";
 constexpr char kFreezerTopic[] = "marinefridge/freezer/temperature";
 constexpr char kAmbientTopic[] = "marinefridge/ambient/temperature";
+
+CerboMqttPublisher g_cerbo_mqtt_publisher;
+}
+
+CerboMqttPublisher& cerbo_mqtt_publisher() {
+  return g_cerbo_mqtt_publisher;
 }
 
 CerboMqttPublisher::CerboMqttPublisher() : mqtt_(network_client_) {
