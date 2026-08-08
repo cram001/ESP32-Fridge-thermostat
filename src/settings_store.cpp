@@ -37,7 +37,7 @@ bool SettingsStore::to_json(JsonObject& root) {
   root["circulation_min_on_min"] = settings_.circulation_min_on_min;
   root["emergency_spillover_on_min"] =
       settings_.emergency_spillover_on_min;
-  root["buzzer_enabled"] = settings_.buzzer_enabled;
+  root["buzzer_mode"] = settings_.buzzer_mode;
   root["oled_contrast_percent"] = settings_.oled_contrast_percent;
   root["display_timeout_min"] = settings_.display_timeout_min;
   root["fridge_on_left"] = settings_.fridge_on_left;
@@ -69,7 +69,15 @@ bool SettingsStore::from_json(const JsonObject& root) {
   settings_.emergency_spillover_on_min =
       root["emergency_spillover_on_min"] |
       settings_.emergency_spillover_on_min;
-  settings_.buzzer_enabled = root["buzzer_enabled"] | settings_.buzzer_enabled;
+  if (root.containsKey("buzzer_mode")) {
+    settings_.buzzer_mode = root["buzzer_mode"] | settings_.buzzer_mode;
+  } else if (root.containsKey("buzzer_enabled")) {
+    // One-time migration from the old ON/OFF setting. Existing enabled systems
+    // move to the new default HI-LO sound; disabled systems stay silent.
+    const bool legacy_enabled = root["buzzer_enabled"] | true;
+    settings_.buzzer_mode = legacy_enabled ? hw::kDefaultBuzzerMode
+                                            : hw::kBuzzerModeOff;
+  }
   settings_.oled_contrast_percent =
       root["oled_contrast_percent"] | settings_.oled_contrast_percent;
   settings_.display_timeout_min =
@@ -127,7 +135,7 @@ const String ConfigSchema(const SettingsStore&) {
       "spillover_min_on_min":{"title":"Spillover minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
       "circulation_min_on_min":{"title":"Circulation minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
       "emergency_spillover_on_min":{"title":"Get-me-home spillover fan (minutes ON per hour; 0 = OFF)","type":"integer","enum":%EMERGENCY_OPTIONS%},
-      "buzzer_enabled":{"title":"Buzzer enabled","type":"boolean"},
+      "buzzer_mode":{"title":"Buzzer","description":"Alarm sound; OFF disables audible alarms.","type":"integer","oneOf":[{"const":0,"title":"OFF"},{"const":1,"title":"STEADY"},{"const":2,"title":"DOUBLE"},{"const":3,"title":"HI-LO"},{"const":4,"title":"TRIPLE"}]},
       "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","enum":%CONTRAST_OPTIONS%},
       "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":%DISPLAY_TIMEOUT_OPTIONS%},
       "fridge_on_left":{"title":"Display fridge on left side","type":"boolean"},
