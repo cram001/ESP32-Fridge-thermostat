@@ -26,6 +26,8 @@ struct DisplayModel {
   uint8_t fault_code;
   const char* fault_message;
   bool signalk_connected;
+  uint16_t cerbo_mqtt_interval_s;
+  bool cerbo_mqtt_connected;
 };
 
 class FridgeDisplay {

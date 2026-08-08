@@ -4,6 +4,9 @@
 #include <esp_task_wdt.h>
 
 #include "buzzer_controller.h"
+#include "cerbo_mqtt.h"
+#include "cerbo_mqtt_interval.h"
+#include "cerbo_mqtt_settings.h"
 #include "fridge_display.h"
 #include "fridge_controller.h"
 #include "fault_manager.h"
@@ -27,6 +30,9 @@ String assigned_rom[3];
 String vessel_name = "FRIDGE CTRL";
 auto settings_store = std::make_shared<SettingsStore>(
     settings, display_fahrenheit, calibration_c, assigned_rom, vessel_name);
+CerboMqttSettings cerbo_mqtt_settings;
+auto cerbo_mqtt_settings_store =
+    std::make_shared<CerboMqttSettingsStore>(cerbo_mqtt_settings);
 TemperatureManager temperatures(hw::kOneWirePin);
 FridgeDisplay display(hw::kOledCsPin, hw::kOledDcPin, hw::kOledResetPin,
                       hw::kPixelShiftPeriodMs);
@@ -57,6 +63,7 @@ bool edit_changed = false;
 ControllerSettings edit_original_settings;
 float edit_original_calibration_c[3] = {0.0f, 0.0f, 0.0f};
 bool edit_original_fahrenheit = false;
+uint16_t edit_original_cerbo_mqtt_interval_s = 0;
 bool edit_snapshot_valid = false;
 
 bool alarm_active = false;
@@ -78,12 +85,13 @@ uint32_t last_menu_activity_ms = 0;
 constexpr uint32_t kMenuActivityTimeoutMs = 10UL * 1000UL;
 constexpr uint32_t kSavedMessageDurationMs = 750;
 constexpr uint32_t kOutputTestDurationMs = 5UL * 1000UL;
-constexpr uint8_t kSettingCount = 23;
+constexpr uint8_t kSettingCount = 24;
 constexpr uint8_t kLayoutSetting = 17;
-constexpr uint8_t kOutputTestSetting = 18;
-constexpr uint8_t kFirstAssignmentSetting = 19;
-constexpr uint8_t kLastAssignmentSetting = 21;
-constexpr uint8_t kAboutSetting = 22;
+constexpr uint8_t kCerboMqttSetting = 18;
+constexpr uint8_t kOutputTestSetting = 19;
+constexpr uint8_t kFirstAssignmentSetting = 20;
+constexpr uint8_t kLastAssignmentSetting = 22;
+constexpr uint8_t kAboutSetting = 23;
 constexpr uint8_t kOutputTestOptionCount = 4;
 constexpr uint8_t kOutputTestSpillover = 0;
 constexpr uint8_t kOutputTestCirculation = 1;
@@ -106,6 +114,15 @@ uint32_t last_button_event_ms = 0;
 bool encoder_button_ready = true;
 
 bool task_watchdog_enabled = false;
+
+// Fixed snapshots let us notice SensESP web-UI edits without allocating in the
+// main loop. Configuration strings themselves are persistent UI state; the hot
+// MQTT publish path remains fixed-buffer only.
+char applied_mqtt_host[64] = {};
+char applied_mqtt_username[48] = {};
+char applied_mqtt_password[48] = {};
+uint16_t applied_mqtt_port = 0;
+uint16_t applied_mqtt_interval_s = UINT16_MAX;
 
 std::shared_ptr<SKOutput<float>> sk_fridge;
 std::shared_ptr<SKOutput<float>> sk_freezer;
@@ -194,6 +211,39 @@ void load_settings() {
 
 void save_settings() { settings_store->save(); }
 
+bool cerbo_mqtt_config_changed() {
+  return strcmp(applied_mqtt_host, cerbo_mqtt_settings.host.c_str()) != 0 ||
+         strcmp(applied_mqtt_username, cerbo_mqtt_settings.username.c_str()) !=
+             0 ||
+         strcmp(applied_mqtt_password, cerbo_mqtt_settings.password.c_str()) !=
+             0 ||
+         applied_mqtt_port != cerbo_mqtt_settings.port ||
+         applied_mqtt_interval_s != cerbo_mqtt_settings.report_interval_s;
+}
+
+void apply_cerbo_mqtt_config() {
+  const uint32_t interval_ms =
+      static_cast<uint32_t>(cerbo_mqtt_settings.report_interval_s) * 1000UL;
+  cerbo_mqtt_publisher().configure(
+      cerbo_mqtt_settings.host.c_str(), cerbo_mqtt_settings.port,
+      cerbo_mqtt_settings.username.c_str(), cerbo_mqtt_settings.password.c_str(),
+      interval_ms);
+
+  snprintf(applied_mqtt_host, sizeof(applied_mqtt_host), "%s",
+           cerbo_mqtt_settings.host.c_str());
+  snprintf(applied_mqtt_username, sizeof(applied_mqtt_username), "%s",
+           cerbo_mqtt_settings.username.c_str());
+  snprintf(applied_mqtt_password, sizeof(applied_mqtt_password), "%s",
+           cerbo_mqtt_settings.password.c_str());
+  applied_mqtt_port = cerbo_mqtt_settings.port;
+  applied_mqtt_interval_s = cerbo_mqtt_settings.report_interval_s;
+}
+
+void service_cerbo_mqtt(uint32_t now) {
+  if (cerbo_mqtt_config_changed()) apply_cerbo_mqtt_config();
+  cerbo_mqtt_publisher().service(now, fridge_c, freezer_c, ambient_c);
+}
+
 void show_saved_message(uint32_t now) {
   saved_message_until_ms = now + kSavedMessageDurationMs;
   display_awake = true;
@@ -204,6 +254,8 @@ void show_saved_message(uint32_t now) {
 void capture_edit_snapshot() {
   edit_original_settings = settings;
   edit_original_fahrenheit = display_fahrenheit;
+  edit_original_cerbo_mqtt_interval_s =
+      cerbo_mqtt_settings.report_interval_s;
   for (uint8_t role = 0; role < 3; ++role) {
     edit_original_calibration_c[role] = calibration_c[role];
   }
@@ -223,6 +275,8 @@ void rollback_edit() {
 
   settings = edit_original_settings;
   display_fahrenheit = edit_original_fahrenheit;
+  cerbo_mqtt_settings.report_interval_s =
+      edit_original_cerbo_mqtt_interval_s;
   for (uint8_t role = 0; role < 3; ++role) {
     calibration_c[role] = edit_original_calibration_c[role];
   }
@@ -770,6 +824,15 @@ void update_encoder() {
     } else if (selected_setting == kLayoutSetting) {
       settings.fridge_on_left = !settings.fridge_on_left;
       setting_changed = true;
+    } else if (selected_setting == kCerboMqttSetting) {
+      const size_t current =
+          cerbo_mqtt::ReportIntervalIndex(cerbo_mqtt_settings.report_interval_s);
+      int32_t next = (static_cast<int32_t>(current) + delta) %
+                     static_cast<int32_t>(cerbo_mqtt::kReportIntervalCount);
+      if (next < 0) next += cerbo_mqtt::kReportIntervalCount;
+      cerbo_mqtt_settings.report_interval_s =
+          cerbo_mqtt::kReportIntervalsS[next];
+      setting_changed = true;
     }
 
     if (setting_changed) {
@@ -782,7 +845,14 @@ void update_encoder() {
     if (selected_setting != 14 && selected_setting != kAboutSetting) {
       // Avoid unnecessary filesystem writes if edit was entered/exited without
       // changing anything, while keeping the user-facing commit confirmation.
-      if (edit_changed) save_settings();
+      if (edit_changed) {
+        if (selected_setting == kCerboMqttSetting) {
+          cerbo_mqtt_settings_store->save();
+          apply_cerbo_mqtt_config();
+        } else {
+          save_settings();
+        }
+      }
       show_saved_message(now);
       discard_edit_snapshot();
     }
@@ -848,6 +918,7 @@ void update_display() {
       last_menu_activity_ms != 0 &&
       now - last_menu_activity_ms < kMenuActivityTimeoutMs;
 
+  CerboMqttPublisher& mqtt = cerbo_mqtt_publisher();
   DisplayModel model{role_temps,
                      calibration_c,
                      &settings,
@@ -867,7 +938,9 @@ void update_display() {
                      fault_count,
                      static_cast<uint8_t>(fault.code),
                      fault.message,
-                     signalk_connected};
+                     signalk_connected,
+                     cerbo_mqtt_settings.report_interval_s,
+                     mqtt.connected()};
   display.draw(model);
 }
 
@@ -923,8 +996,16 @@ void setup() {
           "Thermostat, alarms, fan timing, display layout, calibration, and sensor assignments. "
           "Numeric limits shown below are enforced by the controller when settings are saved.")
       ->set_sort_order(500);
+  ConfigItem(cerbo_mqtt_settings_store)
+      ->set_title("Cerbo GX MQTT")
+      ->set_description(
+          "Optional direct MQTT temperature publishing to a Cerbo GX / Node-RED installation. "
+          "Set the reporting interval to OFF to disable MQTT completely.")
+      ->set_sort_order(510);
 
   load_settings();
+  cerbo_mqtt_settings_store->load();
+  apply_cerbo_mqtt_config();
 
   Wire.begin(hw::kI2cSdaPin, hw::kI2cSclPin);
   encoder_available = encoder.begin() == NO_ERR;
@@ -987,11 +1068,13 @@ void loop() {
     last_display_activity_ms = now;
     read_temperatures();
     update_controller();
+    service_cerbo_mqtt(now);
     update_display();
     return;
   }
 
   read_temperatures();
+  service_cerbo_mqtt(now);
 
   if (now - last_control_ms >= hw::kControlPeriodMs) {
     last_control_ms = now;
