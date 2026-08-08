@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - tools/apply_about_menu.py
+      - .github/workflows/apply-about-menu.yml
 
 permissions:
   contents: write
