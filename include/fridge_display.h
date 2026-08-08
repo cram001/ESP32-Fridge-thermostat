@@ -58,6 +58,7 @@ class FridgeDisplay {
   void draw_alarm(const DisplayModel& model);
   void draw_menu(int x, int y, const DisplayModel& model);
   void draw_errors(int x, int y, const DisplayModel& model);
+  void draw_about(int x, int y);
   void draw_assignment(int x, int y, const DisplayModel& model);
 
   void draw_temperature(int x, int y, const char* label, float value,

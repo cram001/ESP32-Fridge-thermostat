@@ -1,11 +1,12 @@
 #include "fridge_display.h"
 
 namespace {
-constexpr uint8_t kSettingCount = 22;
+constexpr uint8_t kSettingCount = 23;
 constexpr uint8_t kLayoutSetting = 17;
 constexpr uint8_t kOutputTestSetting = 18;
 constexpr uint8_t kFirstAssignmentSetting = 19;
 constexpr uint8_t kLastAssignmentSetting = 21;
+constexpr uint8_t kAboutSetting = 22;
 }
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
@@ -303,13 +304,13 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   if (model.control->spillover) {
     draw_fan(x + 37, y + 57, fan_phase);
   } else {
-    oled_.drawStr(x + 31, y + 62, "-");
+    oled_.drawStr(x + 34, y + 62, "-");
   }
   oled_.drawStr(x + 68, y + 62, "CIRC");
   if (model.control->circulation) {
     draw_fan(x + 99, y + 57, fan_phase);
   } else {
-    oled_.drawStr(x + 93, y + 62, "-");
+    oled_.drawStr(x + 96, y + 62, "-");
   }
 }
 
@@ -425,6 +426,9 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
                            "Assign ambient"};
     t.name = roles[model.selected_setting - kFirstAssignmentSetting];
     t.value[0] = '\0';
+  } else if (model.selected_setting == kAboutSetting) {
+    t.name = "About";
+    snprintf(t.value, sizeof(t.value), "Press to open");
   }
   return t;
 }
@@ -447,6 +451,21 @@ void FridgeDisplay::draw_menu(int x, int y, const DisplayModel& model) {
   oled_.drawFrame(x, y + 50, 124, 4);
   const int fill = (124 * (model.selected_setting + 1)) / kSettingCount;
   oled_.drawBox(x, y + 50, fill, 4);
+}
+
+void FridgeDisplay::draw_about(int x, int y) {
+  oled_.setFont(u8g2_font_6x10_tf);
+  oled_.drawStr(x + 2, y + 10, "ABOUT");
+
+  char line[24];
+  snprintf(line, sizeof(line), "Firmware %s", hw::kFirmwareVersion);
+  oled_.drawStr(x + 2, y + 25, line);
+  snprintf(line, sizeof(line), "Built %s", __DATE__);
+  oled_.drawStr(x + 2, y + 38, line);
+
+  oled_.setFont(u8g2_font_5x7_tf);
+  oled_.drawStr(x + 2, y + 51, "(c) Marc Archambault");
+  oled_.drawStr(x + 2, y + 62, "Press to return");
 }
 
 void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
@@ -487,6 +506,9 @@ void FridgeDisplay::draw(const DisplayModel& model) {
     draw_assignment(x, y, model);
   } else if (showing_errors) {
     draw_errors(x, y, model);
+  } else if (model.menu_active && model.menu_editing &&
+             model.selected_setting == kAboutSetting) {
+    draw_about(x, y);
   } else if (model.alarm_active) {
     draw_alarm(model);
   } else if (model.menu_active) {

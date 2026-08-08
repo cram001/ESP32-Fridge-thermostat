@@ -78,11 +78,12 @@ uint32_t last_menu_activity_ms = 0;
 constexpr uint32_t kMenuActivityTimeoutMs = 10UL * 1000UL;
 constexpr uint32_t kSavedMessageDurationMs = 750;
 constexpr uint32_t kOutputTestDurationMs = 5UL * 1000UL;
-constexpr uint8_t kSettingCount = 22;
+constexpr uint8_t kSettingCount = 23;
 constexpr uint8_t kLayoutSetting = 17;
 constexpr uint8_t kOutputTestSetting = 18;
 constexpr uint8_t kFirstAssignmentSetting = 19;
 constexpr uint8_t kLastAssignmentSetting = 21;
+constexpr uint8_t kAboutSetting = 22;
 constexpr uint8_t kOutputTestOptionCount = 4;
 constexpr uint8_t kOutputTestSpillover = 0;
 constexpr uint8_t kOutputTestCirculation = 1;
@@ -631,7 +632,9 @@ void update_encoder() {
         }
         set_encoder_navigation_mode();
       } else {
-        if (selected_setting != 14) capture_edit_snapshot();
+        if (selected_setting != 14 && selected_setting != kAboutSetting) {
+          capture_edit_snapshot();
+        }
         menu_editing = true;
         edit_changed = false;
         // Editing deliberately uses the same proven gain-1 detent handling as
@@ -776,7 +779,7 @@ void update_encoder() {
   }
 
   if (button_down) {
-    if (selected_setting != 14) {
+    if (selected_setting != 14 && selected_setting != kAboutSetting) {
       // Avoid unnecessary filesystem writes if edit was entered/exited without
       // changing anything, while keeping the user-facing commit confirmation.
       if (edit_changed) save_settings();

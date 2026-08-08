@@ -50,7 +50,7 @@ The top line uses fixed regions so information never overlaps:
 
 - From the home screen, press the encoder to enter settings. The menu opens at
   item 1.
-- Rotate clockwise or counterclockwise to browse all 22 items. Browsing wraps
+- Rotate clockwise or counterclockwise to browse all 23 items. Browsing wraps
   in both directions.
 - Press a normal setting to enter edit mode.
 - The original value is captured when edit begins. Rotation previews a change
@@ -202,6 +202,7 @@ stop it early. A real alarm cancels a service output test.
 | 20 | `Assign fridge` | Assign/clear fridge probe. |
 | 21 | `Assign freezer` | Assign/clear freezer probe. |
 | 22 | `Assign ambient` | Assign/clear ambient probe. |
+| 23 | `About` | Firmware version, build date, and copyright/author information. |
 
 ## Alarms and faults
 
