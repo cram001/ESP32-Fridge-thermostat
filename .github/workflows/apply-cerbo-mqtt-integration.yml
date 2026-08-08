@@ -1,0 +1,27 @@
+name: Apply Cerbo MQTT integration
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-cerbo-mqtt-integration.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/cerbo-mqtt-temperatures
+      - name: Apply integration patch
+        run: python tools/apply_cerbo_mqtt_integration.py
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Complete Cerbo MQTT application integration"
+          git push origin HEAD:agent/cerbo-mqtt-temperatures
