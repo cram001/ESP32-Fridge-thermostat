@@ -173,8 +173,11 @@ void FridgeDisplay::draw_assignment(int x, int y,
   } else {
     draw_temperature(x, y + 35, "Live", model.assignment_temp_c,
                      model.fahrenheit);
-    snprintf(line, sizeof(line), "ROM ...%s",
-             model.assignment_rom.substring(8).c_str());
+    const char* rom_suffix =
+        model.assignment_rom && strlen(model.assignment_rom) > 8
+            ? model.assignment_rom + 8
+            : (model.assignment_rom ? model.assignment_rom : "");
+    snprintf(line, sizeof(line), "ROM ...%s", rom_suffix);
     oled_.drawStr(x, y + 47, line);
   }
   oled_.drawStr(x, y + 61, "Rotate / press assign");
