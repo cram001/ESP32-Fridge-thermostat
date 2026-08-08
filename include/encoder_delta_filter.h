@@ -4,10 +4,14 @@
 #include <cstdlib>
 
 // Filters SEN0502 encoder reads when firmware reprograms the encoder value to
-// reposition the LED gauge. The module may briefly return the previous value
-// after setEncoderValue(); those stale readbacks must never be interpreted as
-// user rotation. Only complete gain-sized movements are accepted in gauge
-// mode, so programmatic LED remapping cannot become a multi-step setting jump.
+// reposition the LED gauge. The gain coefficient changes the visual LED
+// response; it does not mean getEncoderValue() moves by `gain` counts for one
+// physical detent. Rotary input therefore remains raw small count changes.
+//
+// After setEncoderValue(), the module may briefly return the previous value.
+// During that one rebaseline transition, decode relative to whichever of the
+// old or new programmed baselines is nearest. This rejects our own gauge jump
+// while preserving a real turn that occurs before the new baseline is read.
 class EncoderDeltaFilter {
  public:
   void reset(uint16_t baseline, uint8_t gain) {
@@ -36,7 +40,9 @@ class EncoderDeltaFilter {
 
     if (rebaseline_pending_) {
       if (position == static_cast<int32_t>(previous_baseline_)) {
-        // Exact stale readback from before the firmware reposition.
+        // Exact stale readback from before the firmware reposition. Keep the
+        // transition pending until the new baseline (or a real nearby turn)
+        // is observed.
         return 0;
       }
       if (position == static_cast<int32_t>(baseline_)) {
@@ -48,44 +54,24 @@ class EncoderDeltaFilter {
           position - static_cast<int32_t>(previous_baseline_);
       const int32_t from_current =
           position - static_cast<int32_t>(baseline_);
+      const int32_t previous_distance = std::abs(from_previous);
+      const int32_t current_distance = std::abs(from_current);
 
-      if (gain_ <= 1) {
-        // During a navigation-mode rebaseline, choose the nearer reference.
-        // This preserves a genuine turn that occurs before the new baseline is
-        // observed while rejecting a large stale jump from the other mode.
-        rebaseline_pending_ = false;
-        return std::abs(from_previous) <= std::abs(from_current)
-                   ? from_previous
-                   : from_current;
-      }
+      rebaseline_pending_ = false;
 
-      // A user may rotate before the reprogrammed gauge baseline has been
-      // observed. Accept only complete gain-sized movements from either the
-      // old or new baseline; ambiguous residuals are discarded.
-      if (is_complete_step(from_previous)) {
-        rebaseline_pending_ = false;
-        return from_previous / static_cast<int32_t>(gain_);
-      }
-      if (is_complete_step(from_current)) {
-        rebaseline_pending_ = false;
-        return from_current / static_cast<int32_t>(gain_);
-      }
+      // A genuine detent occurring during the rebaseline will normally be a
+      // one- or two-count change from one baseline and much farther from the
+      // other. In the unlikely exact-tie case, discard the ambiguous sample
+      // rather than risk a multi-step edit.
+      if (previous_distance < current_distance) return from_previous;
+      if (current_distance < previous_distance) return from_current;
       return 0;
     }
 
-    const int32_t delta = position - static_cast<int32_t>(baseline_);
-    if (gain_ <= 1) return delta;
-    if (!is_complete_step(delta)) return 0;
-    return delta / static_cast<int32_t>(gain_);
+    return position - static_cast<int32_t>(baseline_);
   }
 
  private:
-  bool is_complete_step(int32_t delta) const {
-    if (delta == 0) return false;
-    const int32_t gain = static_cast<int32_t>(gain_);
-    return std::abs(delta) >= gain && delta % gain == 0;
-  }
-
   uint16_t baseline_ = 0;
   uint16_t previous_baseline_ = 0;
   uint8_t gain_ = 1;
