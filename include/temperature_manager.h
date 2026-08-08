@@ -5,10 +5,11 @@
 #include <OneWire.h>
 
 #include "hardware_config.h"
+#include "sensor_health_tracker.h"
 
 class TemperatureManager {
  public:
-  enum class SensorStatus : uint8_t { kOk, kMissing, kOutOfRange };
+  enum class SensorStatus : uint8_t { kOk, kMissing, kReadFailed, kOutOfRange };
   static constexpr uint8_t kRoleCount = 3;
   static constexpr uint8_t kMaxSensors = 8;
 
@@ -58,7 +59,7 @@ class TemperatureManager {
   void reset_filter(uint8_t role);
   void add_filter_sample(uint8_t role, float value);
   void collect(const String assigned_rom[kRoleCount],
-               const float calibration_c[kRoleCount]);
+               const float calibration_c[kRoleCount], uint32_t now);
 
   OneWire one_wire_;
   DallasTemperature bus_;
@@ -74,6 +75,7 @@ class TemperatureManager {
   float filter_calibration_c_[kRoleCount] = {NAN, NAN, NAN};
   SensorStatus role_status_[kRoleCount] = {
       SensorStatus::kMissing, SensorStatus::kMissing, SensorStatus::kMissing};
+  SensorHealthTracker role_health_[kRoleCount];
 
   uint8_t detected_count_ = 0;
   DeviceAddress discovery_candidate_[kMaxSensors] = {};

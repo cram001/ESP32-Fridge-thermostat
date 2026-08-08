@@ -44,12 +44,6 @@ float ambient_c = NAN;
 bool temperature_sample_ready = false;
 bool temperature_sample_updated = false;
 
-// Advisory stuck-value monitor. This does not alter thermostat control; it
-// simply tells the user when a valid probe has reported no meaningful raw
-// temperature change for an implausibly long period.
-float last_changed_temp_c[3] = {NAN, NAN, NAN};
-uint32_t last_temp_change_ms[3] = {0, 0, 0};
-bool temperature_stuck[3] = {false, false, false};
 
 bool assignment_mode = false;
 uint8_t assignment_role = 0;
@@ -241,39 +235,6 @@ void rollback_edit() {
   edit_changed = false;
 }
 
-void update_temperature_stuck_monitor(uint32_t now) {
-  for (uint8_t role = 0; role < 3; ++role) {
-    const bool valid =
-        temperatures.role_status(role) == TemperatureManager::SensorStatus::kOk;
-    const float raw_c = temperatures.role_raw_temperature(role);
-
-    if (!valid || !std::isfinite(raw_c)) {
-      last_changed_temp_c[role] = NAN;
-      last_temp_change_ms[role] = now;
-      temperature_stuck[role] = false;
-      continue;
-    }
-
-    if (!std::isfinite(last_changed_temp_c[role])) {
-      last_changed_temp_c[role] = raw_c;
-      last_temp_change_ms[role] = now;
-      temperature_stuck[role] = false;
-      continue;
-    }
-
-    if (fabsf(raw_c - last_changed_temp_c[role]) >=
-        hw::kTemperatureStuckChangeC) {
-      last_changed_temp_c[role] = raw_c;
-      last_temp_change_ms[role] = now;
-      temperature_stuck[role] = false;
-      continue;
-    }
-
-    temperature_stuck[role] =
-        now - last_temp_change_ms[role] >= hw::kTemperatureStuckTimeoutMs;
-  }
-}
-
 void publish_detected_probe_metadata() {
   // ROM metadata changes only when the debounced OneWire discovery list
   // changes. String construction here is therefore an exceptional event, not
@@ -291,14 +252,12 @@ void read_temperatures() {
     return;
   }
 
-  const uint32_t now = millis();
   fridge_c = temperatures.role_temperature(0);
   freezer_c = temperatures.role_temperature(1);
   freezer_safety_c = temperatures.role_raw_temperature(1);
   ambient_c = temperatures.role_temperature(2);
   temperature_sample_ready = true;
   temperature_sample_updated = true;
-  update_temperature_stuck_monitor(now);
 
   sk_fridge->set(std::isfinite(fridge_c) ? fridge_c + 273.15f : NAN);
   sk_freezer->set(std::isfinite(freezer_c) ? freezer_c + 273.15f : NAN);
@@ -332,12 +291,12 @@ void update_controller() {
   faults.set(FaultCode::kFreezerRange, freezer_status == Status::kOutOfRange);
   faults.set(FaultCode::kAmbientMissing, ambient_status == Status::kMissing);
   faults.set(FaultCode::kAmbientRange, ambient_status == Status::kOutOfRange);
-  faults.set(FaultCode::kFridgeStuck,
-             fridge_status == Status::kOk && temperature_stuck[0]);
-  faults.set(FaultCode::kFreezerStuck,
-             freezer_status == Status::kOk && temperature_stuck[1]);
-  faults.set(FaultCode::kAmbientStuck,
-             ambient_status == Status::kOk && temperature_stuck[2]);
+  faults.set(FaultCode::kFridgeReadFailed,
+             fridge_status == Status::kReadFailed);
+  faults.set(FaultCode::kFreezerReadFailed,
+             freezer_status == Status::kReadFailed);
+  faults.set(FaultCode::kAmbientReadFailed,
+             ambient_status == Status::kReadFailed);
   faults.set(FaultCode::kEncoderOffline, !encoder_available);
   faults.set(FaultCode::kEncoderErratic, encoder_input_locked);
 

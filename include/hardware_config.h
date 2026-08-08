@@ -55,13 +55,13 @@ constexpr float kDs18b20PowerOnResetC = 85.0f;
 // Re-discover OneWire devices periodically. Two consecutive matching scans are
 // required before the active list changes, rejecting one-off bus noise while
 // still recovering automatically from replacements/reconnections.
-constexpr uint32_t kSensorRescanIntervalMs = 30UL * 1000UL;
+constexpr uint32_t kSensorRescanIntervalMs = 5UL * 1000UL;
 constexpr uint8_t kSensorDiscoveryConfirmations = 2;
-// Advisory fault when a valid probe reports no meaningful raw-temperature
-// change for a prolonged period. 10-bit DS18B20 readings are quantized to
-// 0.25 C, so 0.20 C cleanly recognizes a one-count change.
-constexpr uint32_t kTemperatureStuckTimeoutMs = 30UL * 60UL * 1000UL;
-constexpr float kTemperatureStuckChangeC = 0.20f;
+// Sensor input is considered healthy only while recent CRC-valid samples keep
+// arriving. Two transient failures are tolerated; the third failed 5-second
+// sample, or 15 seconds without a good sample, marks the role read-failed.
+constexpr uint8_t kSensorReadFailureLimit = 3;
+constexpr uint32_t kSensorFreshnessTimeoutMs = 15UL * 1000UL;
 
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
@@ -107,6 +107,6 @@ constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
 constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.12.8";
+constexpr char kFirmwareVersion[] = "v0.12.9";
 
 }  // namespace hw

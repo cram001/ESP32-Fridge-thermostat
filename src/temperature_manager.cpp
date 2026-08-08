@@ -49,6 +49,7 @@ void TemperatureManager::reset_filter(uint8_t role) {
   filter_index_[role] = 0;
   filter_count_[role] = 0;
   role_temp_c_[role] = NAN;
+  role_raw_temp_c_[role] = NAN;
 }
 
 void TemperatureManager::add_filter_sample(uint8_t role, float value) {
@@ -93,7 +94,15 @@ void TemperatureManager::apply_discovery(
       detected_roms_[i][b] = i < count ? list[i][b] : 0;
     }
   }
-  if (changed) discovery_changed_ = true;
+  if (changed) {
+    // Newly connected DS18B20s power up at 12-bit resolution. Set each
+    // committed address to 10-bit so the asynchronous 190 ms conversion wait
+    // remains valid after hot-plug/reconnect as well as at cold boot.
+    for (uint8_t i = 0; i < detected_count_; ++i) {
+      bus_.setResolution(detected_roms_[i], 10, true);
+    }
+    discovery_changed_ = true;
+  }
 }
 
 bool TemperatureManager::scan_sensors(uint32_t now, bool force) {
@@ -105,22 +114,21 @@ bool TemperatureManager::scan_sensors(uint32_t now, bool force) {
 
   DeviceAddress found[kMaxSensors] = {};
   uint8_t found_count = 0;
+  DeviceAddress address;
 
-  // Do not use DallasTemperature::getDeviceCount() here. That value is cached
-  // when DallasTemperature::begin() runs, so it cannot discover a probe that
-  // was absent at boot or connected later. getAddress() performs a real
-  // OneWire search each time, so walking indexes until it fails provides the
-  // runtime rediscovery required by this unattended controller without heap
-  // allocation or reinitializing the temperature subsystem.
-  for (uint8_t index = 0; index < kMaxSensors; ++index) {
-    DeviceAddress address;
-    if (!bus_.getAddress(address, index)) break;
+  // Perform a real OneWire ROM search every time. DallasTemperature caches its
+  // device count during begin(), so its indexed discovery helpers cannot be
+  // relied upon to find probes connected later. Validate the ROM CRC and only
+  // accept the DS18B20 family used by this controller.
+  one_wire_.reset_search();
+  while (found_count < kMaxSensors && one_wire_.search(address)) {
+    if (OneWire::crc8(address, 7) != address[7]) continue;
+    if (address[0] != 0x28) continue;
     copy_rom(found[found_count], address);
-    found_count++;
+    ++found_count;
   }
+  one_wire_.reset_search();
 
-  // Stable ordering keeps detectedProbeN paths from shuffling when the OneWire
-  // library returns the same devices in a different discovery order.
   for (uint8_t i = 1; i < found_count; ++i) {
     DeviceAddress key;
     copy_rom(key, found[i]);
@@ -147,7 +155,7 @@ bool TemperatureManager::scan_sensors(uint32_t now, bool force) {
 
   if (candidate_matches(found, found_count)) {
     if (discovery_candidate_confirmations_ < 255) {
-      discovery_candidate_confirmations_++;
+      ++discovery_candidate_confirmations_;
     }
   } else {
     discovery_candidate_count_ = found_count;
@@ -157,8 +165,6 @@ bool TemperatureManager::scan_sensors(uint32_t now, bool force) {
     discovery_candidate_confirmations_ = 1;
   }
 
-  // Require two consecutive scans before changing the discovered list. This
-  // rejects a single noisy OneWire scan without preventing automatic recovery.
   if (discovery_candidate_confirmations_ <
       hw::kSensorDiscoveryConfirmations) {
     return false;
@@ -197,17 +203,18 @@ bool TemperatureManager::poll(const String assigned_rom[kRoleCount],
     return false;
   }
   if (now - conversion_started_ms_ < kConversionDelayMs) return false;
-  collect(assigned_rom, calibration_c);
+  collect(assigned_rom, calibration_c, now);
   last_request_ms_ = now;
   conversion_state_ = ConversionState::kIdle;
   return true;
 }
 
 void TemperatureManager::collect(const String assigned_rom[kRoleCount],
-                                 const float calibration_c[kRoleCount]) {
+                                 const float calibration_c[kRoleCount],
+                                 uint32_t now) {
   for (uint8_t i = 0; i < detected_count_; ++i) {
     const float value = bus_.getTempC(detected_roms_[i]);
-    if (value == DEVICE_DISCONNECTED_C ||
+    if (value == DEVICE_DISCONNECTED_C || !std::isfinite(value) ||
         fabsf(value - hw::kDs18b20PowerOnResetC) < 0.01f) {
       detected_temp_c_[i] = NAN;
     } else {
@@ -216,35 +223,66 @@ void TemperatureManager::collect(const String assigned_rom[kRoleCount],
   }
 
   for (uint8_t role = 0; role < kRoleCount; ++role) {
-    role_raw_temp_c_[role] = NAN;
-    role_status_[role] = SensorStatus::kMissing;
-
     const char* assigned = assigned_rom[role].c_str();
     if (strcasecmp(filter_rom_[role], assigned) != 0 ||
         filter_calibration_c_[role] != calibration_c[role]) {
       reset_filter(role);
+      role_health_[role].reset();
       snprintf(filter_rom_[role], sizeof(filter_rom_[role]), "%s", assigned);
       filter_calibration_c_[role] = calibration_c[role];
     }
 
+    if (assigned[0] == 0) {
+      role_status_[role] = SensorStatus::kMissing;
+      role_health_[role].reset();
+      reset_filter(role);
+      continue;
+    }
+
+    int8_t matched_sensor = -1;
     for (uint8_t sensor = 0; sensor < detected_count_; ++sensor) {
       char sensor_rom[17];
       rom_to_chars(detected_roms_[sensor], sensor_rom);
-      if (strcasecmp(assigned, sensor_rom) != 0) continue;
-
-      if (std::isfinite(detected_temp_c_[sensor])) {
-        const float calibrated = detected_temp_c_[sensor] + calibration_c[role];
-        if (calibrated < -55.0f || calibrated > 85.0f) {
-          role_status_[role] = SensorStatus::kOutOfRange;
-        } else {
-          role_raw_temp_c_[role] = calibrated;
-          role_status_[role] = SensorStatus::kOk;
-          add_filter_sample(role, calibrated);
-        }
+      if (strcasecmp(assigned, sensor_rom) == 0) {
+        matched_sensor = static_cast<int8_t>(sensor);
+        break;
       }
-      break;
     }
 
-    if (role_status_[role] != SensorStatus::kOk) reset_filter(role);
+    if (matched_sensor < 0) {
+      role_status_[role] = SensorStatus::kMissing;
+      role_health_[role].reset();
+      reset_filter(role);
+      continue;
+    }
+
+    const float raw = detected_temp_c_[matched_sensor];
+    if (!std::isfinite(raw)) {
+      const bool expired = role_health_[role].note_failure(
+          now, hw::kSensorReadFailureLimit, hw::kSensorFreshnessTimeoutMs);
+      if (expired) {
+        role_status_[role] = SensorStatus::kReadFailed;
+        reset_filter(role);
+      } else {
+        // A brief CRC/read glitch must not destabilize control. Retain the most
+        // recent known-good sample only while the explicit freshness window is
+        // still valid.
+        role_status_[role] = SensorStatus::kOk;
+      }
+      continue;
+    }
+
+    const float calibrated = raw + calibration_c[role];
+    if (calibrated < -55.0f || calibrated > 85.0f) {
+      role_status_[role] = SensorStatus::kOutOfRange;
+      role_health_[role].reset();
+      reset_filter(role);
+      continue;
+    }
+
+    role_health_[role].note_good(now);
+    role_raw_temp_c_[role] = calibrated;
+    role_status_[role] = SensorStatus::kOk;
+    add_filter_sample(role, calibrated);
   }
 }

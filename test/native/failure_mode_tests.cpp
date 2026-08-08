@@ -29,34 +29,6 @@ void limitation(bool condition, const char* description) {
   }
 }
 
-struct StuckTemperatureMonitor {
-  float last_changed_c = NAN;
-  uint32_t last_change_ms = 0;
-  bool stuck = false;
-
-  bool update(uint32_t now, bool valid, float raw_c) {
-    if (!valid || !std::isfinite(raw_c)) {
-      last_changed_c = NAN;
-      last_change_ms = now;
-      stuck = false;
-      return false;
-    }
-    if (!std::isfinite(last_changed_c)) {
-      last_changed_c = raw_c;
-      last_change_ms = now;
-      stuck = false;
-      return false;
-    }
-    if (std::fabs(raw_c - last_changed_c) >= hw::kTemperatureStuckChangeC) {
-      last_changed_c = raw_c;
-      last_change_ms = now;
-      stuck = false;
-      return false;
-    }
-    stuck = now - last_change_ms >= hw::kTemperatureStuckTimeoutMs;
-    return stuck;
-  }
-};
 
 struct FirmwareSim {
   ControllerSettings settings;
@@ -183,18 +155,6 @@ void test_freezer_sensor_missing_keeps_fridge_control_available() {
         "missing freezer probe cannot assert freezer lockout");
 }
 
-void test_stuck_temperature_advisory_timing() {
-  StuckTemperatureMonitor monitor;
-  check(!monitor.update(1000, true, 4.00f),
-        "unchanged-temperature monitor initializes quietly");
-  check(!monitor.update(1000 + hw::kTemperatureStuckTimeoutMs - 1, true, 4.00f),
-        "unchanged temperature does not warn before 30 minutes");
-  check(monitor.update(1000 + hw::kTemperatureStuckTimeoutMs, true, 4.00f),
-        "unchanged temperature warns at 30 minutes");
-  check(!monitor.update(1000 + hw::kTemperatureStuckTimeoutMs + 5000,
-                        true, 4.25f),
-        "one DS18B20 10-bit count of movement clears the warning");
-}
 
 void test_spillover_fan_failed_off_is_eventually_observable() {
   FirmwareSim sim;
@@ -310,20 +270,14 @@ void test_compressor_failure_with_missing_freezer_probe_loses_protection() {
 
 void test_compressor_failure_with_stuck_cold_freezer_probe() {
   FirmwareSim sim;
-  StuckTemperatureMonitor freezer_monitor;
   const float reported_freezer_c = -10.0f;
-
-  bool stuck_warning = false;
   for (uint32_t minute = 0; minute <= 35; ++minute) {
     const uint32_t now = 1000 + minute * 60UL * 1000UL;
     sim.step(now, 8.0f, reported_freezer_c, true, true);
-    stuck_warning = freezer_monitor.update(now, true, reported_freezer_c);
   }
 
-  check(stuck_warning,
-        "stuck-cold freezer probe produces the 30-minute unchanged-temperature advisory");
   limitation(!sim.output.freezer_lockout && !sim.temperature_alarm,
-             "a plausible but stuck-cold freezer reading can mask a real compressor failure; firmware has only the unchanged-temperature advisory without independent freezer feedback");
+             "a CRC-valid, plausible but physically wrong freezer reading cannot be distinguished from a genuinely stable freezer without independent feedback");
 }
 
 void test_startup_alarm_grace_during_compressor_failure() {
@@ -347,7 +301,6 @@ int main() {
   test_fridge_sensor_missing_default_fails_safe();
   test_fridge_sensor_missing_get_home_duty_cycle_and_lockout();
   test_freezer_sensor_missing_keeps_fridge_control_available();
-  test_stuck_temperature_advisory_timing();
   test_spillover_fan_failed_off_is_eventually_observable();
   test_spillover_fan_stuck_on_is_not_directly_detectable();
   test_circulation_fan_failures_are_not_directly_detectable();

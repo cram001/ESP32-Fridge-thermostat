@@ -21,14 +21,13 @@ limits.
 | Fridge probe missing + GET-HOME | Timed spillover duty cycle | Valid warm freezer still blocks spillover | No real fridge-temperature control while probe is failed |
 | Freezer probe missing/invalid | Active error; fridge control continues | Fridge remains controlled | Freezer lockout and freezer-temperature alarm are unavailable |
 | DS18B20 reports +85°C reset value | Reading rejected as invalid immediately | Avoids accepting the sensor power-on/reset register value as real temperature | A real +85°C compartment temperature is intentionally outside this application's accepted behavior |
-| Valid probe unchanged ~30 min | `temp not changing` advisory | User is warned | Reading remains usable for control because it may still be physically valid |
 | Spillover fan mechanically/electrically fails OFF | Controller continues commanding ON | Fridge high-temperature alarm can occur; >60 min commanded-run fault occurs | No direct proof that fan failed; detection depends on resulting temperatures/time |
 | Spillover fan/MOSFET stuck ON | Controller may command OFF | Temperature/lockout alarms may eventually reveal consequences | **No direct detection with current hardware** |
 | Circulation fan fails OFF | Controller still commands circulation | Fridge temperature control may still function | **No direct detection with current hardware** |
 | Circulation fan/MOSFET stuck ON | Controller may command OFF | Usually limited safety consequence | **No direct detection with current hardware** |
 | Freezer compressor/refrigeration failure, freezer probe valid | Freezer warms; spillover locks out at configured threshold; freezer alarm follows | Prevents deliberate spillover from adding load to already-warm freezer | Compressor itself is inferred from temperature only |
 | Compressor failure + freezer probe missing | Freezer-missing error only | None from freezer temperature | **Lockout/alarm cannot operate; fridge spillover control continues** |
-| Compressor failure + freezer probe stuck plausibly cold | 30-minute unchanged-temperature advisory | User is warned about suspicious probe | **Cold false reading can mask freezer warming until independent observation** |
+| Compressor failure + freezer probe stuck plausibly cold | Reading remains apparently valid if communication/CRC are good | None from temperature alone | **Cold false reading can mask freezer warming until independent observation** |
 | Compressor failure during startup alarm grace | Freezer lockout still works immediately | Spillover protection remains | High-temperature alarm is intentionally delayed until alarm arming/grace criteria are met |
 
 ## Sensor failure cases
@@ -65,20 +64,22 @@ temperature and waiting for the 30-minute unchanged-value advisory.
 ### Ambient probe failure
 
 Ambient temperature is informational and does not participate in refrigeration
-control. Missing/range/stuck conditions should therefore remain advisory faults
-rather than changing fan behavior.
+control. Missing, read-failed, and range conditions remain advisory faults rather
+than changing fan behavior. A stable cabin temperature is not a fault: repeated
+CRC-valid samples remain healthy even if the numeric value is unchanged for hours.
 
-### Plausible but frozen sensor value
+### Sensor input validity and freshness
 
-A disconnected DS18B20 is normally reported as invalid, but a sensor or data
-path can theoretically remain at one plausible value. The firmware therefore
-raises an advisory if a valid raw reading fails to move by one 10-bit DS18B20
-measurement step for approximately 30 minutes.
+Each assigned role is healthy only while its ROM is present and recent valid
+samples continue to arrive. DallasTemperature validates the scratchpad CRC; the
+firmware also rejects the DS18B20 +85 C power-on value and implausible range. Two
+transient failed 5-second reads are tolerated using the most recent good sample.
+A third failed read, or 15 seconds without a good sample, changes the role to
+`read failed`. One subsequent good sample recovers automatically.
 
-The advisory does not automatically reject the reading. A compartment can
-legitimately remain extremely stable, so treating this as a hard sensor failure
-would create false fail-safe transitions. For the fridge or freezer probe, the
-warning triangle and Active Errors entry tell the user to investigate.
+Numeric movement is deliberately not a validity requirement. A refrigerator,
+freezer, or cabin can legitimately remain on the same 0.25 C 10-bit reading for
+hours, so an unchanged-value alarm produces false positives and is not used.
 
 ## Fan failure cases
 
@@ -147,10 +148,10 @@ spillover control continues as designed.
 ### Compressor failure combined with a stuck-cold freezer reading
 
 A plausible cold reading can prevent lockout and freezer high-temperature alarm
-even while the real freezer warms. The 30-minute unchanged-temperature advisory
-is the only available software indication until another measured quantity
-changes. Independent compressor/fan/current/temperature feedback would be
-required to make this condition fully deterministic.
+even while the real freezer warms. If the sensor continues returning CRC-valid
+data, software cannot reliably distinguish a physically stuck or misplaced probe
+from a genuinely stable freezer. Independent compressor/fan/current/temperature
+feedback would be required to make this condition fully deterministic.
 
 ## Startup alarm grace
 

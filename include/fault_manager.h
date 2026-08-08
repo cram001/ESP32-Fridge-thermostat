@@ -12,9 +12,9 @@ enum class FaultCode : uint8_t {
   kSpilloverLongRun,
   kEncoderOffline,
   kEncoderErratic,
-  kFridgeStuck,
-  kFreezerStuck,
-  kAmbientStuck
+  kFridgeReadFailed,
+  kFreezerReadFailed,
+  kAmbientReadFailed
 };
 
 struct FaultEntry {

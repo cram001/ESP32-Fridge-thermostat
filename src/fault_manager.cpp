@@ -12,9 +12,9 @@ constexpr FaultEntry kFaults[] = {
     {FaultCode::kSpilloverLongRun, "Spillover running >60m"},
     {FaultCode::kEncoderOffline, "Encoder offline"},
     {FaultCode::kEncoderErratic, "Encoder input erratic"},
-    {FaultCode::kFridgeStuck, "Fridge temp not changing"},
-    {FaultCode::kFreezerStuck, "Freezer temp not changing"},
-    {FaultCode::kAmbientStuck, "Ambient temp not changing"},
+    {FaultCode::kFridgeReadFailed, "Fridge sensor read failed"},
+    {FaultCode::kFreezerReadFailed, "Freezer sensor read failed"},
+    {FaultCode::kAmbientReadFailed, "Ambient sensor read failed"},
 };
 }
 
