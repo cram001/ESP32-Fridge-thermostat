@@ -19,7 +19,8 @@ struct ControllerSettings {
   // Explicit get-me-home mode used only when the fridge probe has failed.
   // Zero keeps the spillover fan off; non-zero values are minutes ON per hour.
   uint8_t emergency_spillover_on_min = 0;
-  bool buzzer_enabled = true;
+  // 0 OFF, 1 STEADY, 2 DOUBLE, 3 HI-LO, 4 TRIPLE.
+  uint8_t buzzer_mode = hw::kDefaultBuzzerMode;
   uint8_t oled_contrast_percent = 50;
   uint8_t display_timeout_min = 0;
   // Default preserves the original layout: freezer left, fridge right.
@@ -81,6 +82,9 @@ inline void NormalizeControllerSettings(ControllerSettings& settings) {
           hw::kEmergencySpilloverOptionCount)) {
     settings.emergency_spillover_on_min =
         defaults.emergency_spillover_on_min;
+  }
+  if (settings.buzzer_mode >= hw::kBuzzerModeCount) {
+    settings.buzzer_mode = defaults.buzzer_mode;
   }
   if (!IsAllowedSettingOption(settings.oled_contrast_percent,
                               hw::kOledContrastOptions,
