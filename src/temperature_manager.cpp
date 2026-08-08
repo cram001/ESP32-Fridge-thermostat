@@ -38,12 +38,6 @@ void TemperatureManager::detected_rom_chars(uint8_t sensor,
   rom_to_chars(detected_roms_[sensor], out);
 }
 
-String TemperatureManager::detected_rom(uint8_t sensor) const {
-  char text[17];
-  detected_rom_chars(sensor, text);
-  return String(text);
-}
-
 bool TemperatureManager::take_discovery_changed() {
   const bool changed = discovery_changed_;
   discovery_changed_ = false;
