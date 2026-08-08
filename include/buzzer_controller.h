@@ -32,7 +32,7 @@ class BuzzerController {
     preview_started_ms_ = now;
     // Force the first update to apply the new tone immediately, starting at
     // phase zero regardless of system uptime.
-    active_frequency_hz_ = UINT16_MAX;
+    active_frequency_hz_ = 0xFFFF;
     update_output(0, mode, true);
   }
 
@@ -43,7 +43,7 @@ class BuzzerController {
         return;
       }
       preview_active_ = false;
-      active_frequency_hz_ = UINT16_MAX;
+      active_frequency_hz_ = 0xFFFF;
     }
 
     if (!alarm_should_sound || alarm_mode == hw::kBuzzerModeOff ||
