@@ -304,9 +304,13 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
                model.settings->emergency_spillover_on_min);
     }
   } else if (model.selected_setting == 13) {
+    static const char* buzzer_names[] = {"OFF", "STEADY", "DOUBLE", "HI-LO",
+                                         "TRIPLE"};
+    const uint8_t mode = model.settings->buzzer_mode < hw::kBuzzerModeCount
+                             ? model.settings->buzzer_mode
+                             : hw::kDefaultBuzzerMode;
     t.name = "Buzzer";
-    snprintf(t.value, sizeof(t.value), "%s",
-             model.settings->buzzer_enabled ? "ON" : "OFF");
+    snprintf(t.value, sizeof(t.value), "%s", buzzer_names[mode]);
   } else if (model.selected_setting == 15) {
     t.name = "OLED contrast";
     snprintf(t.value, sizeof(t.value), "%u%%",
