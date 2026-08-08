@@ -4,7 +4,6 @@
 #include <esp_task_wdt.h>
 
 #include "buzzer_controller.h"
-#include "encoder_delta_filter.h"
 #include "fridge_display.h"
 #include "fridge_controller.h"
 #include "fault_manager.h"
@@ -21,7 +20,6 @@ using namespace sensesp;
 namespace {
 
 DFRobot_VisualRotaryEncoder_I2C encoder(hw::kEncoderAddress, &Wire);
-EncoderDeltaFilter encoder_delta_filter;
 ControllerSettings settings;
 float calibration_c[3] = {0.0f, 0.0f, 0.0f};
 bool display_fahrenheit = false;
@@ -111,8 +109,6 @@ uint32_t encoder_quiet_started_ms = 0;
 int32_t encoder_counterclockwise_substeps = 0;
 uint32_t last_button_event_ms = 0;
 bool encoder_button_ready = true;
-uint8_t encoder_gain = hw::kEncoderNavigationGain;
-uint16_t encoder_baseline_value = hw::kEncoderNeutralValue;
 
 bool task_watchdog_enabled = false;
 
@@ -426,123 +422,10 @@ uint8_t option_index(const uint8_t* options, uint8_t count, uint8_t value) {
   return 0;
 }
 
-bool setting_supports_encoder_gauge(uint8_t setting) {
-  return setting <= 4 || (setting >= 6 && setting <= 12) || setting == 15 ||
-         setting == 16;
-}
-
-float selected_setting_gauge_fraction() {
-  if (selected_setting == 0) {
-    return gauge_fraction(settings.high_c,
-                          settings.low_c + hw::kFridgeControlMinimumBandC,
-                          hw::kFridgeControlMaxC);
-  }
-  if (selected_setting == 1) {
-    return gauge_fraction(settings.low_c, hw::kFridgeControlMinC,
-                          settings.high_c - hw::kFridgeControlMinimumBandC);
-  }
-  if (selected_setting == 2) {
-    return gauge_fraction(settings.freezer_lockout_c,
-                          hw::kFreezerThresholdMinC,
-                          hw::kFreezerThresholdMaxC);
-  }
-  if (selected_setting == 3) {
-    return gauge_fraction(settings.fridge_alarm_c, hw::kFridgeAlarmMinC,
-                          hw::kFridgeAlarmMaxC);
-  }
-  if (selected_setting == 4) {
-    return gauge_fraction(settings.freezer_alarm_c, hw::kFreezerAlarmMinC,
-                          hw::kFreezerAlarmMaxC);
-  }
-  if (selected_setting >= 6 && selected_setting <= 8) {
-    return gauge_fraction(calibration_c[selected_setting - 6],
-                          -hw::kCalibrationLimitC, hw::kCalibrationLimitC);
-  }
-  if (selected_setting == 9) {
-    return gauge_fraction(settings.fan_delay_s, hw::kFanDelayMinS,
-                          hw::kFanDelayMaxS);
-  }
-  if (selected_setting == 10) {
-    return gauge_fraction(settings.spillover_min_on_min,
-                          hw::kFanMinimumOnMin, hw::kFanMinimumOnMax);
-  }
-  if (selected_setting == 11) {
-    return gauge_fraction(settings.circulation_min_on_min,
-                          hw::kFanMinimumOnMin, hw::kFanMinimumOnMax);
-  }
-  if (selected_setting == 12) {
-    const uint8_t index = option_index(
-        hw::kEmergencySpilloverOptions, hw::kEmergencySpilloverOptionCount,
-        settings.emergency_spillover_on_min);
-    return gauge_fraction(index, 0, hw::kEmergencySpilloverOptionCount - 1);
-  }
-  if (selected_setting == 15) {
-    const uint8_t index = option_index(
-        hw::kOledContrastOptions, hw::kOledContrastOptionCount,
-        settings.oled_contrast_percent);
-    return gauge_fraction(index, 0, hw::kOledContrastOptionCount - 1);
-  }
-  if (selected_setting == 16) {
-    const uint8_t index = option_index(
-        hw::kDisplayTimeoutOptions, hw::kDisplayTimeoutOptionCount,
-        settings.display_timeout_min);
-    return gauge_fraction(index, 0, hw::kDisplayTimeoutOptionCount - 1);
-  }
-  return 0.0f;
-}
-
-uint16_t selected_setting_gauge_value() {
-  const float fraction = selected_setting_gauge_fraction();
-  return static_cast<uint16_t>(roundf(
-      hw::kEncoderGaugeMinValue +
-      fraction * (hw::kEncoderGaugeMaxValue - hw::kEncoderGaugeMinValue)));
-}
-
-uint8_t selected_setting_gauge_gain() {
-  float edit_steps = 1.0f;
-  if (selected_setting == 0 || selected_setting == 1) {
-    edit_steps = (hw::kFridgeControlMaxC - hw::kFridgeControlMinC) /
-                 hw::kTemperatureEditStepC;
-  } else if (selected_setting == 2) {
-    edit_steps = (hw::kFreezerThresholdMaxC - hw::kFreezerThresholdMinC) /
-                 hw::kTemperatureEditStepC;
-  } else if (selected_setting == 3) {
-    edit_steps = (hw::kFridgeAlarmMaxC - hw::kFridgeAlarmMinC) /
-                 hw::kTemperatureEditStepC;
-  } else if (selected_setting == 4) {
-    edit_steps = (hw::kFreezerAlarmMaxC - hw::kFreezerAlarmMinC) /
-                 hw::kTemperatureEditStepC;
-  } else if (selected_setting >= 6 && selected_setting <= 8) {
-    edit_steps = (2.0f * hw::kCalibrationLimitC) /
-                 hw::kTemperatureEditStepC;
-  } else if (selected_setting == 9) {
-    edit_steps = static_cast<float>(hw::kFanDelayMaxS - hw::kFanDelayMinS) /
-                 hw::kFanDelayStepS;
-  } else if (selected_setting == 10 || selected_setting == 11) {
-    edit_steps = hw::kFanMinimumOnMax - hw::kFanMinimumOnMin;
-  } else if (selected_setting == 12) {
-    edit_steps = hw::kEmergencySpilloverOptionCount - 1;
-  } else if (selected_setting == 15) {
-    edit_steps = hw::kOledContrastOptionCount - 1;
-  } else if (selected_setting == 16) {
-    edit_steps = hw::kDisplayTimeoutOptionCount - 1;
-  }
-
-  const float gauge_span =
-      hw::kEncoderGaugeMaxValue - hw::kEncoderGaugeMinValue;
-  const int gain = static_cast<int>(roundf(gauge_span / edit_steps));
-  return static_cast<uint8_t>(constrain(
-      gain, static_cast<int>(hw::kEncoderNavigationGain),
-      static_cast<int>(hw::kEncoderGaugeGain)));
-}
-
 void set_encoder_navigation_mode() {
   if (!encoder_available) return;
-  encoder_gain = hw::kEncoderNavigationGain;
-  encoder_baseline_value = hw::kEncoderNeutralValue;
-  encoder.setGainCoefficient(encoder_gain);
-  encoder.setEncoderValue(encoder_baseline_value);
-  encoder_delta_filter.program_baseline(encoder_baseline_value, encoder_gain);
+  encoder.setGainCoefficient(hw::kEncoderNavigationGain);
+  encoder.setEncoderValue(hw::kEncoderNeutralValue);
   encoder_counterclockwise_substeps = 0;
 }
 
@@ -579,24 +462,14 @@ void check_encoder_health(uint32_t now) {
   }
 }
 
-void set_encoder_gauge_mode() {
-  if (!encoder_available) return;
-  if (!setting_supports_encoder_gauge(selected_setting)) {
-    set_encoder_navigation_mode();
-    return;
-  }
-
-  encoder_gain = selected_setting_gauge_gain();
-  encoder_baseline_value = selected_setting_gauge_value();
-  encoder.setGainCoefficient(encoder_gain);
-  encoder.setEncoderValue(encoder_baseline_value);
-  encoder_delta_filter.program_baseline(encoder_baseline_value, encoder_gain);
-  encoder_counterclockwise_substeps = 0;
-}
-
 int32_t read_encoder_delta() {
   const int32_t position = encoder.getEncoderValue();
-  return encoder_delta_filter.decode(position);
+  const int32_t delta =
+      position - static_cast<int32_t>(hw::kEncoderNeutralValue);
+  if (delta != 0) {
+    encoder.setEncoderValue(hw::kEncoderNeutralValue);
+  }
+  return delta;
 }
 
 uint8_t wrapped_index(uint8_t current, int32_t delta, uint8_t count) {
@@ -612,6 +485,7 @@ void update_encoder() {
   const int32_t raw_delta = read_encoder_delta();
   const bool raw_button_down = encoder.detectButtonDown();
   if (raw_button_down) {
+    encoder.setEncoderValue(hw::kEncoderNeutralValue);
     encoder_counterclockwise_substeps = 0;
   }
 
@@ -760,7 +634,7 @@ void update_encoder() {
 
   if (!menu_active) {
     last_menu_activity_ms = 0;
-    if (menu_editing || encoder_gain != hw::kEncoderNavigationGain) {
+    if (menu_editing) {
       if (menu_editing) rollback_edit();
       menu_editing = false;
       edit_changed = false;
@@ -806,11 +680,9 @@ void update_encoder() {
         if (selected_setting != 14) capture_edit_snapshot();
         menu_editing = true;
         edit_changed = false;
-        if (setting_supports_encoder_gauge(selected_setting)) {
-          set_encoder_gauge_mode();
-        } else {
-          set_encoder_navigation_mode();
-        }
+        // Editing deliberately uses the same proven gain-1 detent handling as
+        // menu navigation. The SEN0502 LED setting gauge is disabled.
+        set_encoder_navigation_mode();
       }
     }
     return;

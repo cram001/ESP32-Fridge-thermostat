@@ -21,12 +21,6 @@ constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
 // enough count headroom for reliable input.
 constexpr uint8_t kEncoderNavigationGain = 1;
 constexpr uint16_t kEncoderNeutralValue = 32;
-// Gauge mode chooses a gain per setting so the encoder count advances across
-// the LED ring at roughly the same fraction as the setting itself. This is the
-// SEN0502 maximum gain and therefore the upper bound for that calculation.
-constexpr uint8_t kEncoderGaugeGain = 51;
-constexpr uint16_t kEncoderGaugeMinValue = 51;
-constexpr uint16_t kEncoderGaugeMaxValue = 969;
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
@@ -78,8 +72,7 @@ constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderHealthCheckIntervalMs = 5UL * 1000UL;
 constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
 // This SEN0502 reports two counterclockwise transitions per detent on this
-// hardware. After gain-scaled count changes are converted back to raw detent
-// transitions, these two transitions are collapsed to one menu/edit step.
+// hardware; collapse those two transitions to one menu/edit step.
 constexpr int32_t kEncoderCounterclockwiseCountsPerDetent = 2;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
@@ -114,6 +107,6 @@ constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
 constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.12.5";
+constexpr char kFirmwareVersion[] = "v0.12.6";
 
 }  // namespace hw
