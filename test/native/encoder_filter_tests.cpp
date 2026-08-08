@@ -15,34 +15,46 @@ void check(bool condition, const char* message) {
 
 void test_stale_previous_baseline_is_discarded() {
   EncoderDeltaFilter filter;
-  filter.reset(501, 51);
-  filter.program_baseline(510, 51);
+  filter.reset(501, 9);
+  filter.program_baseline(510, 9);
   check(filter.decode(501) == 0,
         "old gauge baseline must not become edit movement");
   check(filter.decode(510) == 0,
         "new gauge baseline settles without an edit");
 }
 
-void test_incremental_raw_counts_in_gauge_mode() {
+void test_incremental_gain_scaled_counts() {
   EncoderDeltaFilter filter;
-  filter.reset(510, 51);
-  check(filter.decode(511) == 1,
-        "one raw clockwise count at gauge gain is one raw step");
-  check(filter.decode(512) == 1,
-        "successive clockwise counts remain incremental");
-  check(filter.decode(511) == -1,
-        "one raw counterclockwise transition is preserved");
+  filter.reset(510, 9);
+  check(filter.decode(519) == 1,
+        "one clockwise gain-sized movement is one step");
+  check(filter.decode(528) == 1,
+        "second clockwise movement is incremental, not cumulative");
+  check(filter.decode(519) == -1,
+        "one counterclockwise gain-sized transition is preserved");
   check(filter.decode(510) == -1,
         "second counterclockwise transition is preserved");
 }
 
+void test_partial_counts_accumulate_without_jump() {
+  EncoderDeltaFilter filter;
+  filter.reset(510, 9);
+  check(filter.decode(514) == 0, "partial movement does not create a step");
+  check(filter.decode(519) == 1,
+        "remaining counts complete exactly one step");
+  check(filter.decode(516) == 0,
+        "small reverse movement stays residual, not a jump");
+  check(filter.decode(510) == -1,
+        "residual reverse counts complete one reverse step");
+}
+
 void test_user_turn_during_rebaseline_is_preserved() {
   EncoderDeltaFilter filter;
-  filter.reset(501, 51);
-  filter.program_baseline(510, 51);
-  check(filter.decode(511) == 1,
+  filter.reset(501, 9);
+  filter.program_baseline(510, 9);
+  check(filter.decode(519) == 1,
         "turn immediately after gauge reposition uses new baseline");
-  check(filter.decode(512) == 1,
+  check(filter.decode(528) == 1,
         "tracking continues incrementally after early turn");
 }
 
@@ -54,8 +66,8 @@ void test_large_gauge_reposition_does_not_look_like_rotation() {
         "large stale baseline after mapped reposition is ignored");
   check(filter.decode(510) == 0,
         "large gauge reposition settles cleanly");
-  check(filter.decode(511) == 1,
-        "first real count after large reposition is accepted");
+  check(filter.decode(519) == 1,
+        "first real detent after reposition is accepted");
 }
 
 void test_navigation_rebaseline() {
@@ -73,7 +85,8 @@ void test_navigation_rebaseline() {
 
 int main() {
   test_stale_previous_baseline_is_discarded();
-  test_incremental_raw_counts_in_gauge_mode();
+  test_incremental_gain_scaled_counts();
+  test_partial_counts_accumulate_without_jump();
   test_user_turn_during_rebaseline_is_preserved();
   test_large_gauge_reposition_does_not_look_like_rotation();
   test_navigation_rebaseline();
