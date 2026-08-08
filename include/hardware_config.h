@@ -68,7 +68,6 @@ constexpr float kTemperatureStuckChangeC = 0.20f;
 
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
-constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderButtonGuardMs = 750;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
 // A lightweight I2C presence probe runs on this cadence so a dropped or
