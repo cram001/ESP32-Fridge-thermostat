@@ -55,8 +55,8 @@ The top line uses fixed regions so information never overlaps:
 - Press a normal setting to enter edit mode.
 - The original value is captured when edit begins. Rotation previews a change
   in RAM only.
-- **Press again to commit the change.** The setting is written and a brief
-  `SAVED` screen confirms the commit.
+- **Press again to commit the change.** If the value changed, it is written to
+  storage; a brief `SAVED` screen confirms leaving edit mode.
 - If edit mode times out, the encoder disconnects, or an alarm interrupts the
   edit, the original value is restored instead of saving a partial change.
 - Sensor-assignment items save immediately when the desired probe is pressed.
@@ -187,10 +187,11 @@ stop it early. A real alarm cancels a service output test.
   clear the underlying alarm. The alarm clears only when its condition clears.
 - Missing/out-of-range probes, Signal K disconnection, encoder problems, and a
   spillover run exceeding 60 minutes appear under `ACTIVE ERRORS`.
-- If a valid fridge, freezer, or ambient probe reports no meaningful raw
-  temperature change for 30 minutes, an advisory appears as `... temp not
-  changing`. It does **not** by itself disable control; it prompts inspection
-  for a frozen/bad sensor or wiring problem.
+- If the fridge, freezer, or ambient temperature reading remains exactly at the
+  same DS18B20 measurement step for about 30 minutes, the warning triangle and
+  `ACTIVE ERRORS` advise `... temp not changing`. This does **not** by itself
+  disable control; it is a prompt to inspect the probe/wiring if the reading is
+  implausibly static.
 
 ## Long-uptime behavior
 
