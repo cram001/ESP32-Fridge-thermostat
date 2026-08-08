@@ -31,11 +31,8 @@ class TemperatureManager {
     return sensor < detected_count_ ? detected_temp_c_[sensor] : NAN;
   }
 
-  // Fixed-buffer form for hot/display paths. Caller supplies 17 bytes.
+  // Caller-owned fixed buffer; safe for periodic display/metadata paths.
   void detected_rom_chars(uint8_t sensor, char out[17]) const;
-  // String form is intentionally retained only for infrequent configuration /
-  // Signal K metadata operations, never for the periodic polling/display path.
-  String detected_rom(uint8_t sensor) const;
 
   // Returns true once for each committed discovery-list change.
   bool take_discovery_changed();
