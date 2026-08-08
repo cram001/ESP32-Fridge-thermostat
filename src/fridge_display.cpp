@@ -301,12 +301,12 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
 
-  // Keep each fan status under the compartment it serves. Position the symbol
-  // from the rendered label width so SPILL and CIRC retain the same visual gap
-  // on either side of the display.
+  // Keep each fan status under the compartment where that equipment is
+  // physically associated: circulation with FRDG, spillover with FRZ. Position
+  // the symbol from the rendered label width so spacing stays consistent.
   constexpr int kFanTextGapPx = 3;
   constexpr int kFanRadiusPx = 4;
-  const bool spill_left = model.settings->fridge_on_left;
+  const bool spill_left = !model.settings->fridge_on_left;
   const int spill_label_x = spill_left ? x + 2 : x + 68;
   const int circ_label_x = spill_left ? x + 68 : x + 2;
   const int spill_label_w = oled_.getStrWidth("SPILL");
