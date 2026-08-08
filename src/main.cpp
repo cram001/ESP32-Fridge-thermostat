@@ -103,8 +103,6 @@ uint32_t saved_message_until_ms = 0;
 
 uint32_t splash_started_ms = 0;
 bool splash_active = true;
-bool settings_dirty = false;
-uint32_t settings_changed_ms = 0;
 
 bool encoder_input_locked = false;
 uint32_t encoder_quiet_started_ms = 0;
@@ -165,8 +163,6 @@ void start_output_test(uint32_t now) {
   output_test_active = true;
   output_test_ends_ms = now + kOutputTestDurationMs;
 
-  // Isolate the service test from normal fan commands. The thermostat state is
-  // untouched; only the physical outputs are overridden for five seconds.
   write_fan(hw::kSpilloverFanPin, false);
   write_fan(hw::kCirculationFanPin, false);
   buzzer.stop();
@@ -183,15 +179,12 @@ void start_output_test(uint32_t now) {
 void service_output_test(uint32_t now) {
   if (!output_test_active) return;
 
-  // A real alarm always wins over a service test.
   if (alarm_visual_active ||
       static_cast<int32_t>(now - output_test_ends_ms) >= 0) {
     stop_output_test();
     return;
   }
 
-  // update_controller() writes the normal thermostat outputs every control
-  // cycle. Re-assert the selected physical test output afterwards.
   write_fan(hw::kSpilloverFanPin,
             output_test_selection == kOutputTestSpillover);
   write_fan(hw::kCirculationFanPin,
@@ -201,31 +194,12 @@ void service_output_test(uint32_t now) {
 void load_settings() {
   settings_store->load();
   if (settings_store->startup_defaults_restored()) {
-    // Replace the invalid persisted values so the next reboot starts cleanly.
     settings_store->save();
   }
   settings_store->finish_startup_validation();
 }
 
-void save_settings() {
-  settings_store->save();
-  settings_dirty = false;
-}
-
-void mark_settings_dirty() {
-  settings_dirty = true;
-  settings_changed_ms = millis();
-}
-
-void save_settings_when_idle() {
-  // Rotary edits are transactional: never persist a value until the user
-  // explicitly presses the encoder to finish the edit.
-  if (menu_editing) return;
-  if (settings_dirty &&
-      millis() - settings_changed_ms >= hw::kSettingsSaveDelayMs) {
-    save_settings();
-  }
-}
+void save_settings() { settings_store->save(); }
 
 void show_saved_message(uint32_t now) {
   saved_message_until_ms = now + kSavedMessageDurationMs;
@@ -261,13 +235,10 @@ void rollback_edit() {
   }
   NormalizeControllerSettings(settings);
 
-  // Some settings have immediate UI side effects while they are previewed.
   display.set_contrast(settings.oled_contrast_percent);
   applied_oled_contrast_percent = settings.oled_contrast_percent;
   buzzer.stop();
 
-  // No partial rotary edit should be written later by the deferred-save path.
-  settings_dirty = false;
   edit_snapshot_valid = false;
   edit_changed = false;
 }
@@ -307,8 +278,8 @@ void update_temperature_stuck_monitor(uint32_t now) {
 
 void publish_detected_probe_metadata() {
   // ROM metadata changes only when the debounced OneWire discovery list
-  // changes. String allocation here is therefore an exceptional configuration
-  // event, not a periodic hot-path operation.
+  // changes. String construction here is therefore an exceptional event, not
+  // a periodic/hot-path allocation.
   for (uint8_t sensor = 0; sensor < TemperatureManager::kMaxSensors; ++sensor) {
     char rom[17];
     temperatures.detected_rom_chars(sensor, rom);
@@ -534,8 +505,6 @@ void set_encoder_navigation_mode() {
   encoder_counterclockwise_substeps = 0;
 }
 
-// Lightweight I2C presence probe: address-only transaction, no register
-// read, so it never disturbs the encoder's count/gain state.
 bool encoder_bus_present() {
   Wire.beginTransmission(hw::kEncoderAddress);
   return Wire.endTransmission() == 0;
@@ -801,8 +770,6 @@ void update_encoder() {
         }
         set_encoder_navigation_mode();
       } else {
-        // Active-errors browsing is not a persisted setting. All other edit
-        // screens take a complete snapshot before any rotary change is made.
         if (selected_setting != 14) capture_edit_snapshot();
         menu_editing = true;
         edit_changed = false;
@@ -954,9 +921,9 @@ void update_encoder() {
 
   if (button_down) {
     if (selected_setting != 14) {
-      // Press is the transaction boundary: the current previewed value becomes
-      // persistent only here, followed by explicit visual confirmation.
-      save_settings();
+      // Avoid unnecessary filesystem writes if edit was entered/exited without
+      // changing anything, while keeping the user-facing commit confirmation.
+      if (edit_changed) save_settings();
       show_saved_message(now);
       discard_edit_snapshot();
     }
@@ -1115,8 +1082,6 @@ void setup() {
   setup_signalk();
   sensesp_app->start();
 
-  // setup() runs under the Arduino loop task after the FreeRTOS scheduler has
-  // started, which is the required context for subscribing this task to TWDT.
   setup_task_watchdog();
 
   splash_started_ms = millis();
@@ -1175,7 +1140,6 @@ void loop() {
     update_encoder();
     update_controller();
     service_output_test(now);
-    save_settings_when_idle();
   }
 
   if (now - last_display_ms >= hw::kDisplayPeriodMs) {
