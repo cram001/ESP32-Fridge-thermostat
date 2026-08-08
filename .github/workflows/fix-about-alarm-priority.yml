@@ -1,0 +1,31 @@
+name: Fix About alarm priority
+
+on:
+  push:
+    paths:
+      - tools/fix_about_alarm_priority.py
+      - .github/workflows/fix-about-alarm-priority.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v0.11.1-transactional-edit-status-banners
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply fix
+        run: python3 tools/fix_about_alarm_priority.py
+      - name: Commit and clean helpers
+        run: |
+          rm -f tools/fix_about_alarm_priority.py .github/workflows/fix-about-alarm-priority.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Keep alarms above About screen"
+          git push origin HEAD:agent/v0.11.1-transactional-edit-status-banners
