@@ -268,8 +268,8 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   const char* role_labels[] = {"FRDG", "FRZ"};
 
   oled_.setFont(u8g2_font_6x10_tf);
-  oled_.drawStr(x + 2, y + 19, role_labels[left_role]);
-  oled_.drawStr(x + 66, y + 19, role_labels[right_role]);
+  oled_.drawStr(x + 2, y + 22, role_labels[left_role]);
+  oled_.drawStr(x + 66, y + 22, role_labels[right_role]);
 
   const uint8_t* hero_font = u8g2_font_logisoso20_tf;
   constexpr int kHeroColumnWidth = 61;
