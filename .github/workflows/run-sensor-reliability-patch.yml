@@ -1,0 +1,35 @@
+name: Run sensor reliability patch
+
+on:
+  push:
+    branches:
+      - agent/v0.11.1-transactional-edit-status-banners
+    paths:
+      - .github/workflows/run-sensor-reliability-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v0.11.1-transactional-edit-status-banners
+
+      - name: Apply patch
+        run: python3 tools/apply_sensor_reliability_patch.py
+
+      - name: Commit patch
+        run: |
+          rm -f tools/apply_sensor_reliability_patch.py
+          rm -f .github/workflows/sensor-reliability-patch.yml
+          rm -f .github/workflows/run-sensor-reliability-patch.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Harden DS18B20 discovery and sample freshness"
+          git push
