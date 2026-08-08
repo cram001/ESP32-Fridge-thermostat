@@ -10,10 +10,44 @@ void TemperatureManager::rom_to_chars(const DeviceAddress rom, char out[17]) {
   out[16] = 0;
 }
 
-String TemperatureManager::rom_to_string(const DeviceAddress rom) {
+int TemperatureManager::compare_rom(const DeviceAddress a,
+                                    const DeviceAddress b) {
+  for (uint8_t i = 0; i < 8; ++i) {
+    if (a[i] < b[i]) return -1;
+    if (a[i] > b[i]) return 1;
+  }
+  return 0;
+}
+
+bool TemperatureManager::same_rom(const DeviceAddress a,
+                                  const DeviceAddress b) {
+  return compare_rom(a, b) == 0;
+}
+
+void TemperatureManager::copy_rom(DeviceAddress dest,
+                                  const DeviceAddress src) {
+  for (uint8_t i = 0; i < 8; ++i) dest[i] = src[i];
+}
+
+void TemperatureManager::detected_rom_chars(uint8_t sensor,
+                                            char out[17]) const {
+  if (sensor >= detected_count_) {
+    out[0] = 0;
+    return;
+  }
+  rom_to_chars(detected_roms_[sensor], out);
+}
+
+String TemperatureManager::detected_rom(uint8_t sensor) const {
   char text[17];
-  rom_to_chars(rom, text);
+  detected_rom_chars(sensor, text);
   return String(text);
+}
+
+bool TemperatureManager::take_discovery_changed() {
+  const bool changed = discovery_changed_;
+  discovery_changed_ = false;
+  return changed;
 }
 
 void TemperatureManager::reset_filter(uint8_t role) {
@@ -34,20 +68,113 @@ void TemperatureManager::add_filter_sample(uint8_t role, float value) {
   filter_sum_c_[role] += value;
   filter_index_[role] =
       (index + 1) % hw::kTemperatureFilterSamples;
-  role_temp_c_[role] =
-      filter_sum_c_[role] / filter_count_[role];
+  role_temp_c_[role] = filter_sum_c_[role] / filter_count_[role];
+}
+
+bool TemperatureManager::discovery_matches(
+    const DeviceAddress list[kMaxSensors], uint8_t count) const {
+  if (count != detected_count_) return false;
+  for (uint8_t i = 0; i < count; ++i) {
+    if (!same_rom(list[i], detected_roms_[i])) return false;
+  }
+  return true;
+}
+
+bool TemperatureManager::candidate_matches(
+    const DeviceAddress list[kMaxSensors], uint8_t count) const {
+  if (count != discovery_candidate_count_) return false;
+  for (uint8_t i = 0; i < count; ++i) {
+    if (!same_rom(list[i], discovery_candidate_[i])) return false;
+  }
+  return true;
+}
+
+void TemperatureManager::apply_discovery(
+    const DeviceAddress list[kMaxSensors], uint8_t count) {
+  const bool changed = !discovery_matches(list, count);
+  detected_count_ = count;
+  for (uint8_t i = 0; i < kMaxSensors; ++i) {
+    detected_temp_c_[i] = NAN;
+    for (uint8_t b = 0; b < 8; ++b) {
+      detected_roms_[i][b] = i < count ? list[i][b] : 0;
+    }
+  }
+  if (changed) discovery_changed_ = true;
+}
+
+bool TemperatureManager::scan_sensors(uint32_t now, bool force) {
+  if (!force &&
+      now - last_discovery_scan_ms_ < hw::kSensorRescanIntervalMs) {
+    return false;
+  }
+  last_discovery_scan_ms_ = now;
+
+  DeviceAddress found[kMaxSensors] = {};
+  uint8_t found_count = 0;
+  const uint8_t reported_count =
+      min<uint8_t>(bus_.getDeviceCount(), kMaxSensors);
+  for (uint8_t i = 0; i < reported_count && found_count < kMaxSensors; ++i) {
+    if (bus_.getAddress(found[found_count], i)) found_count++;
+  }
+
+  // Stable ordering keeps detectedProbeN paths from shuffling when the OneWire
+  // library returns the same devices in a different discovery order.
+  for (uint8_t i = 1; i < found_count; ++i) {
+    DeviceAddress key;
+    copy_rom(key, found[i]);
+    int j = static_cast<int>(i) - 1;
+    while (j >= 0 && compare_rom(found[j], key) > 0) {
+      copy_rom(found[j + 1], found[j]);
+      --j;
+    }
+    copy_rom(found[j + 1], key);
+  }
+
+  if (force) {
+    apply_discovery(found, found_count);
+    discovery_candidate_count_ = 0;
+    discovery_candidate_confirmations_ = 0;
+    return true;
+  }
+
+  if (discovery_matches(found, found_count)) {
+    discovery_candidate_count_ = 0;
+    discovery_candidate_confirmations_ = 0;
+    return false;
+  }
+
+  if (candidate_matches(found, found_count)) {
+    if (discovery_candidate_confirmations_ < 255) {
+      discovery_candidate_confirmations_++;
+    }
+  } else {
+    discovery_candidate_count_ = found_count;
+    for (uint8_t i = 0; i < found_count; ++i) {
+      copy_rom(discovery_candidate_[i], found[i]);
+    }
+    discovery_candidate_confirmations_ = 1;
+  }
+
+  // Require two consecutive scans before changing the discovered list. This
+  // rejects a single noisy OneWire scan without preventing automatic recovery.
+  if (discovery_candidate_confirmations_ <
+      hw::kSensorDiscoveryConfirmations) {
+    return false;
+  }
+
+  apply_discovery(discovery_candidate_, discovery_candidate_count_);
+  discovery_candidate_count_ = 0;
+  discovery_candidate_confirmations_ = 0;
+  return true;
 }
 
 void TemperatureManager::begin() {
   bus_.begin();
   bus_.setResolution(10);
-  // Conversions are collected on our own schedule in poll(), so the bus
-  // must not block the caller waiting for them to finish.
+  // Conversions are collected on our own schedule in poll(), so the bus must
+  // not block the caller waiting for them to finish.
   bus_.setWaitForConversion(false);
-  detected_count_ = min<uint8_t>(bus_.getDeviceCount(), kMaxSensors);
-  for (uint8_t i = 0; i < detected_count_; ++i) {
-    bus_.getAddress(detected_roms_[i], i);
-  }
+  scan_sensors(millis(), true);
 }
 
 bool TemperatureManager::poll(const String assigned_rom[kRoleCount],
@@ -55,6 +182,8 @@ bool TemperatureManager::poll(const String assigned_rom[kRoleCount],
                               uint32_t sample_period_ms) {
   const uint32_t now = millis();
   if (conversion_state_ == ConversionState::kIdle) {
+    scan_sensors(now, false);
+
     // last_request_ms_ == 0 only before the very first sample; take it
     // immediately rather than waiting out a full period on cold boot.
     if (last_request_ms_ != 0 && now - last_request_ms_ < sample_period_ms) {
@@ -78,41 +207,37 @@ void TemperatureManager::collect(const String assigned_rom[kRoleCount],
     const float value = bus_.getTempC(detected_roms_[i]);
     detected_temp_c_[i] = value == DEVICE_DISCONNECTED_C ? NAN : value;
   }
+
   for (uint8_t role = 0; role < kRoleCount; ++role) {
-    // Roles follow the immutable 64-bit ROM code, so OneWire discovery order
-    // cannot swap the fridge and freezer after a reboot or wiring change.
     role_raw_temp_c_[role] = NAN;
     role_status_[role] = SensorStatus::kMissing;
-    if (!filter_rom_[role].equalsIgnoreCase(assigned_rom[role]) ||
+
+    const char* assigned = assigned_rom[role].c_str();
+    if (strcasecmp(filter_rom_[role], assigned) != 0 ||
         filter_calibration_c_[role] != calibration_c[role]) {
       reset_filter(role);
-      filter_rom_[role] = assigned_rom[role];
+      snprintf(filter_rom_[role], sizeof(filter_rom_[role]), "%s", assigned);
       filter_calibration_c_[role] = calibration_c[role];
     }
+
     for (uint8_t sensor = 0; sensor < detected_count_; ++sensor) {
       char sensor_rom[17];
       rom_to_chars(detected_roms_[sensor], sensor_rom);
-      if (strcasecmp(assigned_rom[role].c_str(), sensor_rom) == 0) {
-        if (std::isfinite(detected_temp_c_[sensor])) {
-          const float calibrated =
-              detected_temp_c_[sensor] + calibration_c[role];
-          if (calibrated < -55.0f || calibrated > 85.0f) {
-            role_status_[role] = SensorStatus::kOutOfRange;
-          } else {
-            role_raw_temp_c_[role] = calibrated;
-            role_status_[role] = SensorStatus::kOk;
-            add_filter_sample(role, calibrated);
-          }
-        }
-        break;
-      }
-    }
-    if (role_status_[role] != SensorStatus::kOk) {
-      reset_filter(role);
-    }
-  }
-}
+      if (strcasecmp(assigned, sensor_rom) != 0) continue;
 
-String TemperatureManager::detected_rom(uint8_t sensor) const {
-  return rom_to_string(detected_roms_[sensor]);
+      if (std::isfinite(detected_temp_c_[sensor])) {
+        const float calibrated = detected_temp_c_[sensor] + calibration_c[role];
+        if (calibrated < -55.0f || calibrated > 85.0f) {
+          role_status_[role] = SensorStatus::kOutOfRange;
+        } else {
+          role_raw_temp_c_[role] = calibrated;
+          role_status_[role] = SensorStatus::kOk;
+          add_filter_sample(role, calibrated);
+        }
+      }
+      break;
+    }
+
+    if (role_status_[role] != SensorStatus::kOk) reset_filter(role);
+  }
 }
