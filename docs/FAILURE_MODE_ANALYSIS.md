@@ -20,6 +20,7 @@ limits.
 | Fridge probe missing/invalid | Critical probe alarm; normal thermostat disabled | Spillover and circulation OFF by default | User must deliberately enable GET-HOME if desired |
 | Fridge probe missing + GET-HOME | Timed spillover duty cycle | Valid warm freezer still blocks spillover | No real fridge-temperature control while probe is failed |
 | Freezer probe missing/invalid | Active error; fridge control continues | Fridge remains controlled | Freezer lockout and freezer-temperature alarm are unavailable |
+| DS18B20 reports +85°C reset value | Reading rejected as invalid immediately | Avoids accepting the sensor power-on/reset register value as real temperature | A real +85°C compartment temperature is intentionally outside this application's accepted behavior |
 | Valid probe unchanged ~30 min | `temp not changing` advisory | User is warned | Reading remains usable for control because it may still be physically valid |
 | Spillover fan mechanically/electrically fails OFF | Controller continues commanding ON | Fridge high-temperature alarm can occur; >60 min commanded-run fault occurs | No direct proof that fan failed; detection depends on resulting temperatures/time |
 | Spillover fan/MOSFET stuck ON | Controller may command OFF | Temperature/lockout alarms may eventually reveal consequences | **No direct detection with current hardware** |
@@ -54,6 +55,13 @@ A combined freezer-probe failure plus compressor/refrigeration failure is
 therefore a significant degraded mode. The controller can report the missing
 probe, but cannot infer freezer temperature from the fridge probe alone.
 
+### DS18B20 +85°C power-on/reset value
+
+The DS18B20 temperature register powers up at +85°C. For this refrigerator
+controller, +85°C is not a plausible compartment value, so firmware v0.12.1
+rejects it immediately as an invalid reading instead of accepting it as a real
+temperature and waiting for the 30-minute unchanged-value advisory.
+
 ### Ambient probe failure
 
 Ambient temperature is informational and does not participate in refrigeration
@@ -83,8 +91,8 @@ indirect indications are then available:
 
 1. the normal fridge high-temperature alarm when the measured fridge
    temperature reaches its configured limit; and
-2. the existing `Spill fan over 60m` fault after spillover has been commanded
-   continuously for more than 60 minutes.
+2. the existing `Spillover running >60m` fault after spillover has been
+   commanded continuously for more than 60 minutes.
 
 The 60-minute fault is correctly described as a **commanded long run**, not
 proof of fan rotation or fan failure.
@@ -162,7 +170,7 @@ Run both the controller unit tests and failure-mode simulations with:
 ./tools/run-native-tests.sh
 ```
 
-A successful failure-mode run ends with a message similar to:
+A successful failure-mode run ends with:
 
 ```text
 All failure-mode simulations passed; 5 expected hardware-observability limitations reproduced
@@ -170,6 +178,9 @@ All failure-mode simulations passed; 5 expected hardware-observability limitatio
 
 `LIMITATION:` lines are expected results, not test failures. They document
 conditions the present hardware architecture cannot directly observe.
+
+The same command runs automatically in the `Native controller tests` GitHub
+Actions workflow for pushes and pull requests.
 
 ## Hardware improvements that would close remaining blind spots
 
