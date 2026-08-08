@@ -198,6 +198,10 @@ void FridgeDisplay::draw_warning_triangle(int x, int y) {
 }
 
 void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
+  // Fixed top-row zones:
+  // [ Signal K ] [ LOCKOUT / GET-HOME ] [ warning ] [ ambient ]
+  // Keeping these regions stable prevents mode banners and fault indication
+  // from ever drawing on top of each other.
   draw_wifi_icon(x + 9, y + 9, model.signalk_connected);
 
   char ambient_text[8];
@@ -214,6 +218,10 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   const int ambient_w = oled_.getStrWidth(ambient_text);
   const int ambient_x = x + 125 - ambient_w;
   oled_.drawStr(ambient_x, y + 9, ambient_text);
+
+  constexpr int kWarningTriangleX = 84;
+  constexpr int kBannerLeft = 22;
+  constexpr int kBannerRight = 81;
 
   // Operational-mode banner. GET-HOME means the fridge probe is failed and a
   // non-zero emergency duty cycle is selected. LOCKOUT means the freezer is
@@ -236,14 +244,20 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
     oled_.setFont(u8g2_font_5x7_tf);
     const int text_w = oled_.getStrWidth(banner);
     const int frame_w = text_w + 6;
-    const int available_left = x + 34;  // clear of Wi-Fi + fault triangle
-    const int available_right = ambient_x - 3;
+    const int available_left = x + kBannerLeft;
+    const int available_right = x + kBannerRight;
     if (available_right - available_left >= frame_w) {
       const int frame_x =
           available_left + (available_right - available_left - frame_w) / 2;
       oled_.drawRFrame(frame_x, y + 1, frame_w, 10, 2);
       oled_.drawStr(frame_x + 3, y + 8, banner);
     }
+  }
+
+  // The warning triangle has a permanent home immediately left of ambient.
+  // It no longer shifts or competes with LOCKOUT / GET-HOME banners.
+  if (model.fault_count > 0 && millis() % 2000UL < 650UL) {
+    draw_warning_triangle(x + kWarningTriangleX, y + 1);
   }
 
   const uint8_t left_role = model.settings->fridge_on_left ? 0 : 1;
@@ -478,11 +492,5 @@ void FridgeDisplay::draw(const DisplayModel& model) {
     draw_home(x, y, model);
   }
 
-  const bool showing_home = !model.assignment_mode && !showing_errors &&
-      !model.alarm_active && !model.menu_active;
-  if (showing_home && model.fault_count > 0 &&
-      millis() % 2000UL < 650UL) {
-    draw_warning_triangle(x + 20, y + 1);
-  }
   oled_.sendBuffer();
 }
