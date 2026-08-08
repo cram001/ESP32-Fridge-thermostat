@@ -1,5 +1,7 @@
 #include "settings_store.h"
 
+#include <cmath>
+
 #include "hardware_config.h"
 
 namespace {
@@ -12,6 +14,67 @@ String JsonNumberArray(const uint8_t* values, uint8_t count) {
   }
   json += "]";
   return json;
+}
+
+bool LoadedControllerSettingsValid(const ControllerSettings& settings) {
+  if (!std::isfinite(settings.high_c) || !std::isfinite(settings.low_c) ||
+      !std::isfinite(settings.freezer_lockout_c) ||
+      !std::isfinite(settings.fridge_alarm_c) ||
+      !std::isfinite(settings.freezer_alarm_c)) {
+    return false;
+  }
+  if (settings.high_c < hw::kFridgeControlMinC +
+                            hw::kFridgeControlMinimumBandC ||
+      settings.high_c > hw::kFridgeControlMaxC) {
+    return false;
+  }
+  if (settings.low_c < hw::kFridgeControlMinC ||
+      settings.low_c > hw::kFridgeControlMaxC -
+                           hw::kFridgeControlMinimumBandC ||
+      settings.high_c - settings.low_c < hw::kFridgeControlMinimumBandC) {
+    return false;
+  }
+  if (settings.freezer_lockout_c < hw::kFreezerThresholdMinC ||
+      settings.freezer_lockout_c > hw::kFreezerThresholdMaxC ||
+      settings.fridge_alarm_c < hw::kFridgeAlarmMinC ||
+      settings.fridge_alarm_c > hw::kFridgeAlarmMaxC ||
+      settings.freezer_alarm_c < hw::kFreezerAlarmMinC ||
+      settings.freezer_alarm_c > hw::kFreezerAlarmMaxC) {
+    return false;
+  }
+  if (settings.fan_delay_s < hw::kFanDelayMinS ||
+      settings.fan_delay_s > hw::kFanDelayMaxS ||
+      settings.fan_delay_s % hw::kFanDelayStepS != 0 ||
+      settings.spillover_min_on_min < hw::kFanMinimumOnMin ||
+      settings.spillover_min_on_min > hw::kFanMinimumOnMax ||
+      settings.circulation_min_on_min < hw::kFanMinimumOnMin ||
+      settings.circulation_min_on_min > hw::kFanMinimumOnMax) {
+    return false;
+  }
+  if (!IsAllowedSettingOption(settings.emergency_spillover_on_min,
+                              hw::kEmergencySpilloverOptions,
+                              hw::kEmergencySpilloverOptionCount) ||
+      settings.buzzer_mode >= hw::kBuzzerModeCount ||
+      !IsAllowedSettingOption(settings.oled_contrast_percent,
+                              hw::kOledContrastOptions,
+                              hw::kOledContrastOptionCount) ||
+      !IsAllowedSettingOption(settings.display_timeout_min,
+                              hw::kDisplayTimeoutOptions,
+                              hw::kDisplayTimeoutOptionCount)) {
+    return false;
+  }
+  return true;
+}
+
+bool LoadedCalibrationValid(const float calibration_c[3]) {
+  for (uint8_t role = 0; role < 3; ++role) {
+    if (!std::isfinite(calibration_c[role]) ||
+        calibration_c[role] < -hw::kCalibrationLimitC ||
+        calibration_c[role] > hw::kCalibrationLimitC) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace
@@ -83,17 +146,34 @@ bool SettingsStore::from_json(const JsonObject& root) {
   settings_.display_timeout_min =
       root["display_timeout_min"] | settings_.display_timeout_min;
   settings_.fridge_on_left = root["fridge_on_left"] | settings_.fridge_on_left;
-  NormalizeControllerSettings(settings_);
   fahrenheit_ = root["fahrenheit"] | fahrenheit_;
-  calibration_c_[0] = constrain(
-      root["fridge_calibration_c"] | calibration_c_[0],
-      -hw::kCalibrationLimitC, hw::kCalibrationLimitC);
-  calibration_c_[1] = constrain(
-      root["freezer_calibration_c"] | calibration_c_[1],
-      -hw::kCalibrationLimitC, hw::kCalibrationLimitC);
-  calibration_c_[2] = constrain(
-      root["ambient_calibration_c"] | calibration_c_[2],
-      -hw::kCalibrationLimitC, hw::kCalibrationLimitC);
+
+  // Read raw calibration values first. During startup, invalid persisted values
+  // trigger a coherent fallback to defaults rather than silently clamping a
+  // partly-corrupt configuration into something that looks intentional.
+  calibration_c_[0] = root["fridge_calibration_c"] | calibration_c_[0];
+  calibration_c_[1] = root["freezer_calibration_c"] | calibration_c_[1];
+  calibration_c_[2] = root["ambient_calibration_c"] | calibration_c_[2];
+
+  if (startup_validation_pending_ &&
+      (!LoadedControllerSettingsValid(settings_) ||
+       !LoadedCalibrationValid(calibration_c_))) {
+    settings_ = ControllerSettings{};
+    fahrenheit_ = false;
+    calibration_c_[0] = 0.0f;
+    calibration_c_[1] = 0.0f;
+    calibration_c_[2] = 0.0f;
+    startup_defaults_restored_ = true;
+  } else {
+    NormalizeControllerSettings(settings_);
+    for (uint8_t role = 0; role < 3; ++role) {
+      if (!std::isfinite(calibration_c_[role])) calibration_c_[role] = 0.0f;
+      calibration_c_[role] = constrain(calibration_c_[role],
+                                       -hw::kCalibrationLimitC,
+                                       hw::kCalibrationLimitC);
+    }
+  }
+
   assigned_rom_[0] = root["fridge_rom"] | assigned_rom_[0];
   assigned_rom_[1] = root["freezer_rom"] | assigned_rom_[1];
   assigned_rom_[2] = root["ambient_rom"] | assigned_rom_[2];
