@@ -55,6 +55,17 @@ constexpr uint16_t kBuzzerLowFrequencyHz = 1800;
 
 constexpr uint32_t kTemperaturePeriodMs = 5UL * 1000UL;
 constexpr uint8_t kTemperatureFilterSamples = 6;
+// Re-discover OneWire devices periodically. Two consecutive matching scans are
+// required before the active list changes, rejecting one-off bus noise while
+// still recovering automatically from replacements/reconnections.
+constexpr uint32_t kSensorRescanIntervalMs = 30UL * 1000UL;
+constexpr uint8_t kSensorDiscoveryConfirmations = 2;
+// Advisory fault when a valid probe reports no meaningful raw-temperature
+// change for a prolonged period. 10-bit DS18B20 readings are quantized to
+// 0.25 C, so 0.20 C cleanly recognizes a one-count change.
+constexpr uint32_t kTemperatureStuckTimeoutMs = 30UL * 60UL * 1000UL;
+constexpr float kTemperatureStuckChangeC = 0.20f;
+
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
 constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
@@ -69,6 +80,10 @@ constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
 constexpr int32_t kEncoderCounterclockwiseCountsPerDetent = 2;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
+// Task watchdog protects an unattended controller from a wedged loop or
+// peripheral/library call. Normal loop work completes in far less than this.
+constexpr uint32_t kTaskWatchdogTimeoutS = 15;
+
 // User-editable temperature ranges and increments.
 constexpr float kTemperatureEditStepC = 0.1f;
 constexpr float kFridgeControlMinC = -10.0f;
@@ -96,6 +111,6 @@ constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
 constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.11.2";
+constexpr char kFirmwareVersion[] = "v0.12.0";
 
 }  // namespace hw
