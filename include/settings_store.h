@@ -17,12 +17,19 @@ class SettingsStore : public sensesp::FileSystemSaveable {
   bool to_json(JsonObject& root) override;
   bool from_json(const JsonObject& root) override;
 
+  // Startup loading is stricter than later web edits: if persisted control or
+  // calibration values are invalid, defaults are restored as one coherent set.
+  bool startup_defaults_restored() const { return startup_defaults_restored_; }
+  void finish_startup_validation() { startup_validation_pending_ = false; }
+
  private:
   ControllerSettings& settings_;
   bool& fahrenheit_;
   float* calibration_c_;
   String* assigned_rom_;
   String& vessel_name_;
+  bool startup_validation_pending_ = true;
+  bool startup_defaults_restored_ = false;
 };
 
 const String ConfigSchema(const SettingsStore& store);
