@@ -1,8 +1,10 @@
 name: Remove encoder LED gauge behavior
 on:
   push:
-    branches: [agent/v0.11.1-transactional-edit-status-banners]
-    paths: [.github/workflows/remove-encoder-gauge.yml]
+    branches:
+      - agent/v0.11.1-transactional-edit-status-banners
+    paths:
+      - .github/workflows/remove-encoder-gauge.yml
 permissions:
   contents: write
 jobs:
@@ -14,126 +16,8 @@ jobs:
           ref: agent/v0.11.1-transactional-edit-status-banners
       - name: Restore stable encoder behavior
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path('src/main.cpp')
-          s = p.read_text()
-
-          s = s.replace('#include "encoder_delta_filter.h"\n', '')
-          s = s.replace('EncoderDeltaFilter encoder_delta_filter;\n', '')
-          s = s.replace('uint8_t encoder_gain = hw::kEncoderNavigationGain;\nuint16_t encoder_baseline_value = hw::kEncoderNeutralValue;\n', '')
-
-          # Remove all LED/gauge mapping helpers. Keep option_index(), which is used by normal settings editing.
-          start = s.index('bool setting_supports_encoder_gauge(uint8_t setting) {')
-          end = s.index('void set_encoder_navigation_mode() {', start)
-          s = s[:start] + s[end:]
-
-          old = '''void set_encoder_navigation_mode() {
-  if (!encoder_available) return;
-  encoder_gain = hw::kEncoderNavigationGain;
-  encoder_baseline_value = hw::kEncoderNeutralValue;
-  encoder.setGainCoefficient(encoder_gain);
-  encoder.setEncoderValue(encoder_baseline_value);
-  encoder_delta_filter.program_baseline(encoder_baseline_value, encoder_gain);
-  encoder_counterclockwise_substeps = 0;
-}
-'''
-          new = '''void set_encoder_navigation_mode() {
-  if (!encoder_available) return;
-  encoder.setGainCoefficient(hw::kEncoderNavigationGain);
-  encoder.setEncoderValue(hw::kEncoderNeutralValue);
-  encoder_counterclockwise_substeps = 0;
-}
-'''
-          if old not in s:
-              raise SystemExit('navigation mode block not found')
-          s = s.replace(old, new, 1)
-
-          # Remove the gauge-mode function completely.
-          s = re.sub(r'\nvoid set_encoder_gauge_mode\(\) \{.*?\n\}\n\nint32_t read_encoder_delta\(\) \{',
-                     '\nint32_t read_encoder_delta() {', s, count=1, flags=re.S)
-
-          old = '''int32_t read_encoder_delta() {
-  const int32_t position = encoder.getEncoderValue();
-  return encoder_delta_filter.decode(position);
-}
-'''
-          new = '''int32_t read_encoder_delta() {
-  const int32_t position = encoder.getEncoderValue();
-  const int32_t delta =
-      position - static_cast<int32_t>(hw::kEncoderNeutralValue);
-  if (delta != 0) {
-    encoder.setEncoderValue(hw::kEncoderNeutralValue);
-  }
-  return delta;
-}
-'''
-          if old not in s:
-              raise SystemExit('read encoder block not found')
-          s = s.replace(old, new, 1)
-
-          old = '''  if (raw_button_down) {
-    encoder_counterclockwise_substeps = 0;
-  }
-'''
-          new = '''  if (raw_button_down) {
-    encoder.setEncoderValue(hw::kEncoderNeutralValue);
-    encoder_counterclockwise_substeps = 0;
-  }
-'''
-          if old not in s:
-              raise SystemExit('button block not found')
-          s = s.replace(old, new, 1)
-
-          s = s.replace('    if (menu_editing || encoder_gain != hw::kEncoderNavigationGain) {\n',
-                        '    if (menu_editing) {\n')
-
-          old = '''        if (selected_setting != 14) capture_edit_snapshot();
-        menu_editing = true;
-        edit_changed = false;
-        if (setting_supports_encoder_gauge(selected_setting)) {
-          set_encoder_gauge_mode();
-        } else {
-          set_encoder_navigation_mode();
-        }
-'''
-          new = '''        if (selected_setting != 14) capture_edit_snapshot();
-        menu_editing = true;
-        edit_changed = false;
-        // Use the same proven gain-1 detent handling for editing as for menu
-        // navigation. The SEN0502 LED gauge is intentionally disabled.
-        set_encoder_navigation_mode();
-'''
-          if old not in s:
-              raise SystemExit('edit entry block not found')
-          s = s.replace(old, new, 1)
-
-          p.write_text(s)
-
-          # Hardware config: remove gauge constants/comments and bump version.
-          p = Path('include/hardware_config.h')
-          s = p.read_text()
-          s = re.sub(r'// Gauge mode chooses a gain per setting.*?constexpr uint16_t kEncoderGaugeMaxValue = 969;\n', '', s, count=1, flags=re.S)
-          s = s.replace('// This SEN0502 reports two counterclockwise transitions per detent on this\n// hardware. After gain-scaled count changes are converted back to raw detent\n// transitions, these two transitions are collapsed to one menu/edit step.\n',
-                        '// This SEN0502 reports two counterclockwise transitions per detent on this\n// hardware; collapse those two transitions to one menu/edit step.\n')
-          s = s.replace('constexpr char kFirmwareVersion[] = "v0.12.5";',
-                        'constexpr char kFirmwareVersion[] = "v0.12.6";')
-          p.write_text(s)
-
-          # Documentation: explicitly record that LED gauge behavior was removed.
-          Path('docs/encoder-led-note.md').write_text('''# SEN0502 encoder LEDs\n\nThe SEN0502 ring is tied to the encoder module\'s internal count and the DFRobot\nAPI does not provide independent LED control. Attempts to use that count as a\nsetting-value gauge caused inconsistent detent handling and count/readback races\non the physical hardware.\n\nFirmware therefore **does not use the LED ring as a setting gauge**. Menu\nnavigation and value editing both use the same stable gain-1 encoder behavior,\nwith the count returned to a small neutral value after movement. The ring is\nleft effectively inactive.\n\nCounterclockwise movement on this hardware produces two transitions per physical\ndetent; firmware retains the proven compensation that collapses those two\ntransitions into one menu/edit step. Runtime I2C health is checked periodically;\nif the encoder disappears, an in-progress edit is rolled back and the encoder is\nreinitialized automatically when it reconnects.\n''')
-
-          # The gain-aware filter and its tests are no longer part of the design.
-          Path('include/encoder_delta_filter.h').unlink(missing_ok=True)
-          Path('test/native/encoder_filter_tests.cpp').unlink(missing_ok=True)
-          p = Path('tools/run-native-tests.sh')
-          s = p.read_text().replace('compile_and_run encoder_filter_tests.cpp encoder-filter-tests\n', '')
-          p.write_text(s)
-          PY
-
-          rm .github/workflows/remove-encoder-gauge.yml
+          echo 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAppbXBvcnQgcmUKCnAgPSBQYXRoKCJzcmMvbWFpbi5jcHAiKQpzID0gcC5yZWFkX3RleHQoKQoKcyA9IHMucmVwbGFjZSgnI2luY2x1ZGUgImVuY29kZXJfZGVsdGFfZmlsdGVyLmgiXG4nLCAnJykKcyA9IHMucmVwbGFjZSgnRW5jb2RlckRlbHRhRmlsdGVyIGVuY29kZXJfZGVsdGFfZmlsdGVyO1xuJywgJycpCnMgPSBzLnJlcGxhY2UoJ3VpbnQ4X3QgZW5jb2Rlcl9nYWluID0gaHc6OmtFbmNvZGVyTmF2aWdhdGlvbkdhaW47XG51aW50MTZfdCBlbmNvZGVyX2Jhc2VsaW5lX3ZhbHVlID0gaHc6OmtFbmNvZGVyTmV1dHJhbFZhbHVlO1xuJywgJycpCgpzdGFydCA9IHMuaW5kZXgoJ2Jvb2wgc2V0dGluZ19zdXBwb3J0c19lbmNvZGVyX2dhdWdlKHVpbnQ4X3Qgc2V0dGluZykgeycpCmVuZCA9IHMuaW5kZXgoJ3ZvaWQgc2V0X2VuY29kZXJfbmF2aWdhdGlvbl9tb2RlKCkgeycsIHN0YXJ0KQpzID0gc1s6c3RhcnRdICsgc1tlbmQ6XQoKb2xkID0gIiIidm9pZCBzZXRfZW5jb2Rlcl9uYXZpZ2F0aW9uX21vZGUoKSB7CiAgaWYgKCFlbmNvZGVyX2F2YWlsYWJsZSkgcmV0dXJuOwogIGVuY29kZXJfZ2FpbiA9IGh3OjprRW5jb2Rlck5hdmlnYXRpb25HYWluOwogIGVuY29kZXJfYmFzZWxpbmVfdmFsdWUgPSBodzo6a0VuY29kZXJOZXV0cmFsVmFsdWU7CiAgZW5jb2Rlci5zZXRHYWluQ29lZmZpY2llbnQoZW5jb2Rlcl9nYWluKTsKICBlbmNvZGVyLnNldEVuY29kZXJWYWx1ZShlbmNvZGVyX2Jhc2VsaW5lX3ZhbHVlKTsKICBlbmNvZGVyX2RlbHRhX2ZpbHRlci5wcm9ncmFtX2Jhc2VsaW5lKGVuY29kZXJfYmFzZWxpbmVfdmFsdWUsIGVuY29kZXJfZ2Fpbik7CiAgZW5jb2Rlcl9jb3VudGVyY2xvY2t3aXNlX3N1YnN0ZXBzID0gMDsKfQoiIiIKbmV3ID0gIiIidm9pZCBzZXRfZW5jb2Rlcl9uYXZpZ2F0aW9uX21vZGUoKSB7CiAgaWYgKCFlbmNvZGVyX2F2YWlsYWJsZSkgcmV0dXJuOwogIGVuY29kZXIuc2V0R2FpbkNvZWZmaWNpZW50KGh3OjprRW5jb2Rlck5hdmlnYXRpb25HYWluKTsKICBlbmNvZGVyLnNldEVuY29kZXJWYWx1ZShodzo6a0VuY29kZXJOZXV0cmFsVmFsdWUpOwogIGVuY29kZXJfY291bnRlcmNsb2Nrd2lzZV9zdWJzdGVwcyA9IDA7Cn0KIiIiCmlmIG9sZCBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoIm5hdmlnYXRpb24gbW9kZSBibG9jayBub3QgZm91bmQiKQpzID0gcy5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKczIsIGNvdW50ID0gcmUuc3VibigKICAgIHInXG52b2lkIHNldF9lbmNvZGVyX2dhdWdlX21vZGVcKFwpIFx7Lio/XG5cfVxuXG5pbnQzMl90IHJlYWRfZW5jb2Rlcl9kZWx0YVwoXCkgXHsnLAogICAgJ1xuaW50MzJfdCByZWFkX2VuY29kZXJfZGVsdGEoKSB7JywKICAgIHMsIGNvdW50PTEsIGZsYWdzPXJlLlMpCmlmIGNvdW50ICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJnYXVnZSBtb2RlIGJsb2NrIG5vdCBmb3VuZCIpCnMgPSBzMgoKb2xkID0gIiIiaW50MzJfdCByZWFkX2VuY29kZXJfZGVsdGEoKSB7CiAgY29uc3QgaW50MzJfdCBwb3NpdGlvbiA9IGVuY29kZXIuZ2V0RW5jb2RlclZhbHVlKCk7CiAgcmV0dXJuIGVuY29kZXJfZGVsdGFfZmlsdGVyLmRlY29kZShwb3NpdGlvbik7Cn0KIiIiCm5ldyA9ICIiImludDMyX3QgcmVhZF9lbmNvZGVyX2RlbHRhKCkgewogIGNvbnN0IGludDMyX3QgcG9zaXRpb24gPSBlbmNvZGVyLmdldEVuY29kZXJWYWx1ZSgpOwogIGNvbnN0IGludDMyX3QgZGVsdGEgPQogICAgICBwb3NpdGlvbiAtIHN0YXRpY19jYXN0PGludDMyX3Q+KGh3OjprRW5jb2Rlck5ldXRyYWxWYWx1ZSk7CiAgaWYgKGRlbHRhICE9IDApIHsKICAgIGVuY29kZXIuc2V0RW5jb2RlclZhbHVlKGh3OjprRW5jb2Rlck5ldXRyYWxWYWx1ZSk7CiAgfQogIHJldHVybiBkZWx0YTsKfQoiIiIKaWYgb2xkIG5vdCBpbiBzOgogICAgcmFpc2UgU3lzdGVtRXhpdCgicmVhZCBlbmNvZGVyIGJsb2NrIG5vdCBmb3VuZCIpCnMgPSBzLnJlcGxhY2Uob2xkLCBuZXcsIDEpCgpvbGQgPSAiIiIgIGlmIChyYXdfYnV0dG9uX2Rvd24pIHsKICAgIGVuY29kZXJfY291bnRlcmNsb2Nrd2lzZV9zdWJzdGVwcyA9IDA7CiAgfQoiIiIKbmV3ID0gIiIiICBpZiAocmF3X2J1dHRvbl9kb3duKSB7CiAgICBlbmNvZGVyLnNldEVuY29kZXJWYWx1ZShodzo6a0VuY29kZXJOZXV0cmFsVmFsdWUpOwogICAgZW5jb2Rlcl9jb3VudGVyY2xvY2t3aXNlX3N1YnN0ZXBzID0gMDsKICB9CiIiIgppZiBvbGQgbm90IGluIHM6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJidXR0b24gYmxvY2sgbm90IGZvdW5kIikKcyA9IHMucmVwbGFjZShvbGQsIG5ldywgMSkKCm9sZCA9ICcgICAgaWYgKG1lbnVfZWRpdGluZyB8fCBlbmNvZGVyX2dhaW4gIT0gaHc6OmtFbmNvZGVyTmF2aWdhdGlvbkdhaW4pIHtcbicKaWYgb2xkIG5vdCBpbiBzOgogICAgcmFpc2UgU3lzdGVtRXhpdCgibWVudSB0aW1lb3V0IGdhaW4gY29uZGl0aW9uIG5vdCBmb3VuZCIpCnMgPSBzLnJlcGxhY2Uob2xkLCAnICAgIGlmIChtZW51X2VkaXRpbmcpIHtcbicsIDEpCgpvbGQgPSAiIiIgICAgICAgIGlmIChzZWxlY3RlZF9zZXR0aW5nICE9IDE0KSBjYXB0dXJlX2VkaXRfc25hcHNob3QoKTsKICAgICAgICBtZW51X2VkaXRpbmcgPSB0cnVlOwogICAgICAgIGVkaXRfY2hhbmdlZCA9IGZhbHNlOwogICAgICAgIGlmIChzZXR0aW5nX3N1cHBvcnRzX2VuY29kZXJfZ2F1Z2Uoc2VsZWN0ZWRfc2V0dGluZykpIHsKICAgICAgICAgIHNldF9lbmNvZGVyX2dhdWdlX21vZGUoKTsKICAgICAgICB9IGVsc2UgewogICAgICAgICAgc2V0X2VuY29kZXJfbmF2aWdhdGlvbl9tb2RlKCk7CiAgICAgICAgfQoiIiIKbmV3ID0gIiIiICAgICAgICBpZiAoc2VsZWN0ZWRfc2V0dGluZyAhPSAxNCkgY2FwdHVyZV9lZGl0X3NuYXBzaG90KCk7CiAgICAgICAgbWVudV9lZGl0aW5nID0gdHJ1ZTsKICAgICAgICBlZGl0X2NoYW5nZWQgPSBmYWxzZTsKICAgICAgICAvLyBFZGl0aW5nIGRlbGliZXJhdGVseSB1c2VzIHRoZSBzYW1lIHByb3ZlbiBnYWluLTEgZGV0ZW50IGhhbmRsaW5nIGFzCiAgICAgICAgLy8gbWVudSBuYXZpZ2F0aW9uLiBUaGUgU0VOMDUwMiBMRUQgc2V0dGluZyBnYXVnZSBpcyBkaXNhYmxlZC4KICAgICAgICBzZXRfZW5jb2Rlcl9uYXZpZ2F0aW9uX21vZGUoKTsKIiIiCmlmIG9sZCBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoImVkaXQgZW50cnkgZ2F1Z2UgYmxvY2sgbm90IGZvdW5kIikKcyA9IHMucmVwbGFjZShvbGQsIG5ldywgMSkKCnAud3JpdGVfdGV4dChzKQoKcCA9IFBhdGgoImluY2x1ZGUvaGFyZHdhcmVfY29uZmlnLmgiKQpzID0gcC5yZWFkX3RleHQoKQpzMiwgY291bnQgPSByZS5zdWJuKAogICAgcicvLyBHYXVnZSBtb2RlIGNob29zZXMgYSBnYWluIHBlciBzZXR0aW5nLio/Y29uc3RleHByIHVpbnQxNl90IGtFbmNvZGVyR2F1Z2VNYXhWYWx1ZSA9IDk2OTtcbicsCiAgICAnJywgcywgY291bnQ9MSwgZmxhZ3M9cmUuUykKaWYgY291bnQgIT0gMToKICAgIHJhaXNlIFN5c3RlbUV4aXQoImdhdWdlIGNvbnN0YW50cyBibG9jayBub3QgZm91bmQiKQpzID0gczIKcyA9IHMucmVwbGFjZSgKICAgICcvLyBUaGlzIFNFTjA1MDIgcmVwb3J0cyB0d28gY291bnRlcmNsb2Nrd2lzZSB0cmFuc2l0aW9ucyBwZXIgZGV0ZW50IG9uIHRoaXNcbicKICAgICcvLyBoYXJkd2FyZS4gQWZ0ZXIgZ2Fpbi1zY2FsZWQgY291bnQgY2hhbmdlcyBhcmUgY29udmVydGVkIGJhY2sgdG8gcmF3IGRldGVudFxuJwogICAgJy8vIHRyYW5zaXRpb25zLCB0aGVzZSB0d28gdHJhbnNpdGlvbnMgYXJlIGNvbGxhcHNlZCB0byBvbmUgbWVudS9lZGl0IHN0ZXAuXG4nLAogICAgJy8vIFRoaXMgU0VOMDUwMiByZXBvcnRzIHR3byBjb3VudGVyY2xvY2t3aXNlIHRyYW5zaXRpb25zIHBlciBkZXRlbnQgb24gdGhpc1xuJwogICAgJy8vIGhhcmR3YXJlOyBjb2xsYXBzZSB0aG9zZSB0d28gdHJhbnNpdGlvbnMgdG8gb25lIG1lbnUvZWRpdCBzdGVwLlxuJykKaWYgJ2NvbnN0ZXhwciBjaGFyIGtGaXJtd2FyZVZlcnNpb25bXSA9ICJ2MC4xMi41IjsnIG5vdCBpbiBzOgogICAgcmFpc2UgU3lzdGVtRXhpdCgiZXhwZWN0ZWQgZmlybXdhcmUgdmVyc2lvbiBub3QgZm91bmQiKQpzID0gcy5yZXBsYWNlKCdjb25zdGV4cHIgY2hhciBrRmlybXdhcmVWZXJzaW9uW10gPSAidjAuMTIuNSI7JywKICAgICAgICAgICAgICAnY29uc3RleHByIGNoYXIga0Zpcm13YXJlVmVyc2lvbltdID0gInYwLjEyLjYiOycpCnAud3JpdGVfdGV4dChzKQoKUGF0aCgiZG9jcy9lbmNvZGVyLWxlZC1ub3RlLm1kIikud3JpdGVfdGV4dCgiIiIjIFNFTjA1MDIgZW5jb2RlciBMRURzCgpUaGUgU0VOMDUwMiByaW5nIGlzIHRpZWQgdG8gdGhlIGVuY29kZXIgbW9kdWxlJ3MgaW50ZXJuYWwgY291bnQgYW5kIHRoZSBERlJvYm90CkFQSSBkb2VzIG5vdCBwcm92aWRlIGluZGVwZW5kZW50IExFRCBjb250cm9sLiBBdHRlbXB0cyB0byB1c2UgdGhhdCBjb3VudCBhcyBhCnNldHRpbmctdmFsdWUgZ2F1Z2UgY2F1c2VkIGluY29uc2lzdGVudCBkZXRlbnQgaGFuZGxpbmcgYW5kIGNvdW50L3JlYWRiYWNrIHJhY2VzCm9uIHRoZSBwaHlzaWNhbCBoYXJkd2FyZS4KCkZpcm13YXJlIHRoZXJlZm9yZSAqKmRvZXMgbm90IHVzZSB0aGUgTEVEIHJpbmcgYXMgYSBzZXR0aW5nIGdhdWdlKiouIE1lbnUKbmF2aWdhdGlvbiBhbmQgdmFsdWUgZWRpdGluZyBib3RoIHVzZSB0aGUgc2FtZSBzdGFibGUgZ2Fpbi0xIGVuY29kZXIgYmVoYXZpb3IsCndpdGggdGhlIGNvdW50IHJldHVybmVkIHRvIGEgc21hbGwgbmV1dHJhbCB2YWx1ZSBhZnRlciBtb3ZlbWVudC4gVGhlIHJpbmcgaXMKbGVmdCBlZmZlY3RpdmVseSBpbmFjdGl2ZS4KCkNvdW50ZXJjbG9ja3dpc2UgbW92ZW1lbnQgb24gdGhpcyBoYXJkd2FyZSBwcm9kdWNlcyB0d28gdHJhbnNpdGlvbnMgcGVyIHBoeXNpY2FsCmRldGVudDsgZmlybXdhcmUgcmV0YWlucyB0aGUgcHJvdmVuIGNvbXBlbnNhdGlvbiB0aGF0IGNvbGxhcHNlcyB0aG9zZSB0d28KdHJhbnNpdGlvbnMgaW50byBvbmUgbWVudS9lZGl0IHN0ZXAuIFJ1bnRpbWUgSTJDIGhlYWx0aCBpcyBjaGVja2VkIHBlcmlvZGljYWxseTsKaWYgdGhlIGVuY29kZXIgZGlzYXBwZWFycywgYW4gaW4tcHJvZ3Jlc3MgZWRpdCBpcyByb2xsZWQgYmFjayBhbmQgdGhlIGVuY29kZXIgaXMKcmVpbml0aWFsaXplZCBhdXRvbWF0aWNhbGx5IHdoZW4gaXQgcmVjb25uZWN0cy4KIiIiKQoKUGF0aCgiaW5jbHVkZS9lbmNvZGVyX2RlbHRhX2ZpbHRlci5oIikudW5saW5rKG1pc3Npbmdfb2s9VHJ1ZSkKUGF0aCgidGVzdC9uYXRpdmUvZW5jb2Rlcl9maWx0ZXJfdGVzdHMuY3BwIikudW5saW5rKG1pc3Npbmdfb2s9VHJ1ZSkKCnAgPSBQYXRoKCJ0b29scy9ydW4tbmF0aXZlLXRlc3RzLnNoIikKcyA9IHAucmVhZF90ZXh0KCkKcyA9IHMucmVwbGFjZSgnY29tcGlsZV9hbmRfcnVuIGVuY29kZXJfZmlsdGVyX3Rlc3RzLmNwcCBlbmNvZGVyLWZpbHRlci10ZXN0c1xuJywgJycpCnAud3JpdGVfdGV4dChzKQoKUGF0aCgiLmdpdGh1Yi93b3JrZmxvd3MvcmVtb3ZlLWVuY29kZXItZ2F1Z2UueW1sIikudW5saW5rKG1pc3Npbmdfb2s9VHJ1ZSkK' | base64 -d > /tmp/remove_encoder_gauge.py
+          python3 /tmp/remove_encoder_gauge.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
