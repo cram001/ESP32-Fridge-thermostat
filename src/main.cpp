@@ -2,6 +2,7 @@
 #include <DFRobot_VisualRotaryEncoder.h>
 #include <Wire.h>
 
+#include "buzzer_controller.h"
 #include "fridge_display.h"
 #include "fridge_controller.h"
 #include "fault_manager.h"
@@ -28,6 +29,7 @@ auto settings_store = std::make_shared<SettingsStore>(
 TemperatureManager temperatures(hw::kOneWirePin);
 FridgeDisplay display(hw::kOledCsPin, hw::kOledDcPin, hw::kOledResetPin,
                       hw::kPixelShiftPeriodMs);
+BuzzerController buzzer(hw::kBuzzerPin);
 
 FridgeController controller;
 EmergencySpilloverController emergency_spillover_controller;
@@ -208,11 +210,7 @@ void update_controller() {
     last_display_activity_ms = now;
     display.set_enabled(true);
   }
-  if (alarm_visual_active && settings.buzzer_enabled) {
-    tone(hw::kBuzzerPin, hw::kBuzzerFrequencyHz);
-  } else {
-    noTone(hw::kBuzzerPin);
-  }
+  buzzer.update(now, alarm_visual_active, settings.buzzer_mode);
   sk_alarm->set(alarm_active);
 }
 
@@ -414,7 +412,7 @@ void update_encoder() {
       alarm_visual_active = false;
       menu_editing = false;
       set_encoder_navigation_mode();
-      noTone(hw::kBuzzerPin);
+      buzzer.stop();
     }
     return;
   }
@@ -583,7 +581,12 @@ void update_encoder() {
           hw::kEmergencySpilloverOptions[next_option];
       setting_changed = true;
     } else if (selected_setting == 13) {
-      settings.buzzer_enabled = !settings.buzzer_enabled;
+      int32_t next_mode =
+          (static_cast<int32_t>(settings.buzzer_mode) + delta) %
+          hw::kBuzzerModeCount;
+      if (next_mode < 0) next_mode += hw::kBuzzerModeCount;
+      settings.buzzer_mode = static_cast<uint8_t>(next_mode);
+      buzzer.preview(settings.buzzer_mode, now);
       setting_changed = true;
     } else if (selected_setting == 14 && faults.count() > 0) {
       selected_error = wrapped_index(selected_error, delta, faults.count());
@@ -726,8 +729,7 @@ void setup() {
   digitalWrite(hw::kCirculationFanPin, hw::kFanActiveHigh ? LOW : HIGH);
   pinMode(hw::kSpilloverFanPin, OUTPUT);
   pinMode(hw::kCirculationFanPin, OUTPUT);
-  pinMode(hw::kBuzzerPin, OUTPUT);
-  noTone(hw::kBuzzerPin);
+  buzzer.begin();
   write_fan(hw::kSpilloverFanPin, false);
   write_fan(hw::kCirculationFanPin, false);
 
