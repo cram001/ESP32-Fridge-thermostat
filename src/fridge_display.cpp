@@ -268,8 +268,8 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   const char* role_labels[] = {"FRDG", "FRZ"};
 
   oled_.setFont(u8g2_font_6x10_tf);
-  oled_.drawStr(x + 2, y + 25, role_labels[left_role]);
-  oled_.drawStr(x + 66, y + 25, role_labels[right_role]);
+  oled_.drawStr(x + 2, y + 23, role_labels[left_role]);
+  oled_.drawStr(x + 66, y + 23, role_labels[right_role]);
 
   const uint8_t* hero_font = u8g2_font_logisoso20_tf;
   constexpr int kHeroColumnWidth = 61;
@@ -292,9 +292,9 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
       break;
     }
   }
-  draw_hero_temperature(x + 2, y + 46, model.role_temp_c[left_role],
+  draw_hero_temperature(x + 2, y + 49, model.role_temp_c[left_role],
                         model.fahrenheit, hero_font);
-  draw_hero_temperature(x + 66, y + 46, model.role_temp_c[right_role],
+  draw_hero_temperature(x + 66, y + 49, model.role_temp_c[right_role],
                         model.fahrenheit, hero_font);
 
   oled_.setFont(u8g2_font_6x10_tf);
