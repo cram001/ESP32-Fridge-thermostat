@@ -23,14 +23,11 @@ class CerboMqttPublisher {
   // published. A successful reconnect causes an immediate publish attempt.
   void service(uint32_t now, float fridge_c, float freezer_c, float ambient_c);
 
-  bool enabled() const { return publish_interval_ms_ != 0 && host_[0] != '\0'; }
-
-  // PubSubClient::connected() is not declared const even though we use it only
-  // as a status query here. Keep the public status API const so the display can
-  // inspect connection state without owning or mutating publisher state.
-  bool connected() const {
-    return enabled() && const_cast<PubSubClient&>(mqtt_).connected();
-  }
+  // Enabled reflects the user's reporting choice. A missing/invalid broker
+  // host is therefore shown as enabled-but-disconnected rather than silently
+  // hiding the MQTT status indicator.
+  bool enabled() const { return publish_interval_ms_ != 0; }
+  bool connected() { return enabled() && mqtt_.connected(); }
 
   // Force the next successful service cycle to publish immediately.
   void request_publish() { publish_due_ = true; }

@@ -19,6 +19,11 @@ CerboMqttPublisher& cerbo_mqtt_publisher() {
 
 CerboMqttPublisher::CerboMqttPublisher() : mqtt_(network_client_) {
   build_client_id();
+  // Keep a local-broker outage from holding the application in PubSubClient's
+  // CONNACK wait for its much longer default timeout. TCP connect itself is
+  // still provided by WiFiClient, so reconnect attempts remain rate-limited.
+  mqtt_.setSocketTimeout(1);
+  mqtt_.setKeepAlive(30);
 }
 
 void CerboMqttPublisher::configure(const char* host, uint16_t port,
@@ -46,7 +51,7 @@ void CerboMqttPublisher::build_client_id() {
 }
 
 void CerboMqttPublisher::reconnect(uint32_t now) {
-  if (!enabled() || WiFi.status() != WL_CONNECTED) return;
+  if (!enabled() || host_[0] == '\0' || WiFi.status() != WL_CONNECTED) return;
   if (mqtt_.connected()) return;
 
   if (last_reconnect_attempt_ms_ != 0 &&

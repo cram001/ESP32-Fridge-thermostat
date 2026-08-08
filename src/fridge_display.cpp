@@ -1,14 +1,15 @@
 #include "fridge_display.h"
 
-#include "cerbo_mqtt.h"
+#include "cerbo_mqtt_interval.h"
 
 namespace {
-constexpr uint8_t kSettingCount = 23;
+constexpr uint8_t kSettingCount = 24;
 constexpr uint8_t kLayoutSetting = 17;
-constexpr uint8_t kOutputTestSetting = 18;
-constexpr uint8_t kFirstAssignmentSetting = 19;
-constexpr uint8_t kLastAssignmentSetting = 21;
-constexpr uint8_t kAboutSetting = 22;
+constexpr uint8_t kCerboMqttSetting = 18;
+constexpr uint8_t kOutputTestSetting = 19;
+constexpr uint8_t kFirstAssignmentSetting = 20;
+constexpr uint8_t kLastAssignmentSetting = 22;
+constexpr uint8_t kAboutSetting = 23;
 }
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
@@ -211,8 +212,7 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   // zones move to make room for the new connection icon.
   draw_wifi_icon(x + 9, y + 9, model.signalk_connected);
 
-  const CerboMqttPublisher& mqtt = cerbo_mqtt_publisher();
-  if (mqtt.enabled()) {
+  if (model.cerbo_mqtt_interval_s != 0) {
     // Compact broker/network glyph: three edge nodes converging on a center
     // broker. A diagonal strike-through means configured but disconnected.
     constexpr int kMqttCenterX = 23;
@@ -225,7 +225,7 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
     oled_.drawLine(mx - 3, my - 3, mx - 1, my - 1);
     oled_.drawLine(mx + 3, my - 3, mx + 1, my - 1);
     oled_.drawLine(mx, my + 1, mx, my + 3);
-    if (!mqtt.connected()) {
+    if (!model.cerbo_mqtt_connected) {
       oled_.drawLine(mx - 5, my - 5, mx + 5, my + 5);
     }
   }
@@ -458,6 +458,10 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     t.name = "Display layout";
     snprintf(t.value, sizeof(t.value), "%s",
              model.settings->fridge_on_left ? "FRDG | FRZ" : "FRZ | FRDG");
+  } else if (model.selected_setting == kCerboMqttSetting) {
+    t.name = "Cerbo MQTT";
+    snprintf(t.value, sizeof(t.value), "%s",
+             cerbo_mqtt::ReportIntervalLabel(model.cerbo_mqtt_interval_s));
   } else if (model.selected_setting == kOutputTestSetting) {
     t.name = "Test outputs";
     snprintf(t.value, sizeof(t.value), "Press to open");
