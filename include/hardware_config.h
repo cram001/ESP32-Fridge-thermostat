@@ -16,13 +16,18 @@ constexpr bool kFanActiveHigh = true;
 constexpr uint8_t kI2cSdaPin = 21;  // SDA
 constexpr uint8_t kI2cSclPin = 22;  // SCL
 constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
-// Minimum gain keeps the position ring effectively inactive and provides
-// one raw count per detent for predictable input handling.
-constexpr uint8_t kEncoderGain = 1;
-// The counter is bounded to 0..1023 rather than wrapping. Reset it to a small
-// nonzero neutral value after movement: this leaves ample travel between polls
-// in either direction without advancing the low-gain LED ring.
+// Navigation mode uses minimum gain and a small nonzero neutral count. At this
+// gain the visual ring remains effectively dark while both directions retain
+// enough count headroom for reliable input.
+constexpr uint8_t kEncoderNavigationGain = 1;
 constexpr uint16_t kEncoderNeutralValue = 32;
+// Numeric editing mode uses DFRobot's maximum gain so each physical detent
+// corresponds to roughly one visible LED step. Gauge endpoints deliberately
+// retain one LED of headroom at either end so the encoder can still move both
+// directions when a setting is at its minimum or maximum.
+constexpr uint8_t kEncoderGaugeGain = 51;
+constexpr uint16_t kEncoderGaugeMinValue = 51;
+constexpr uint16_t kEncoderGaugeMaxValue = 969;
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
@@ -36,7 +41,18 @@ constexpr uint8_t kOledCsPin = 14;     // D6
 constexpr uint8_t kOledDcPin = 25;     // D2
 constexpr uint8_t kOledResetPin = 26;  // D3
 
-constexpr uint16_t kBuzzerFrequencyHz = 2400;
+// Single persisted buzzer mode used by both the rotary menu and web settings.
+constexpr uint8_t kBuzzerModeOff = 0;
+constexpr uint8_t kBuzzerModeSteady = 1;
+constexpr uint8_t kBuzzerModeDouble = 2;
+constexpr uint8_t kBuzzerModeHiLo = 3;
+constexpr uint8_t kBuzzerModeTriple = 4;
+constexpr uint8_t kBuzzerModeCount = 5;
+constexpr uint8_t kDefaultBuzzerMode = kBuzzerModeHiLo;
+constexpr uint16_t kBuzzerSteadyFrequencyHz = 2400;
+constexpr uint16_t kBuzzerHighFrequencyHz = 2800;
+constexpr uint16_t kBuzzerLowFrequencyHz = 1800;
+
 constexpr uint32_t kTemperaturePeriodMs = 5UL * 1000UL;
 constexpr uint8_t kTemperatureFilterSamples = 6;
 constexpr uint32_t kControlPeriodMs = 250;
@@ -79,6 +95,6 @@ constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 // Bump the minor number once per firmware PR so the startup screen confirms
 // which merged revision was uploaded: v0.1.0, v0.2.0, ... v0.10.0, etc.
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.8.0";
+constexpr char kFirmwareVersion[] = "v0.10.0";
 
 }  // namespace hw

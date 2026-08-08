@@ -2,6 +2,7 @@
 #include <DFRobot_VisualRotaryEncoder.h>
 #include <Wire.h>
 
+#include "buzzer_controller.h"
 #include "fridge_display.h"
 #include "fridge_controller.h"
 #include "fault_manager.h"
@@ -28,6 +29,7 @@ auto settings_store = std::make_shared<SettingsStore>(
 TemperatureManager temperatures(hw::kOneWirePin);
 FridgeDisplay display(hw::kOledCsPin, hw::kOledDcPin, hw::kOledResetPin,
                       hw::kPixelShiftPeriodMs);
+BuzzerController buzzer(hw::kBuzzerPin);
 
 FridgeController controller;
 EmergencySpilloverController emergency_spillover_controller;
@@ -73,6 +75,8 @@ uint32_t encoder_quiet_started_ms = 0;
 int32_t encoder_counterclockwise_substeps = 0;
 uint32_t last_button_event_ms = 0;
 bool encoder_button_ready = true;
+uint8_t encoder_gain = hw::kEncoderNavigationGain;
+uint16_t encoder_baseline_value = hw::kEncoderNeutralValue;
 
 std::shared_ptr<SKOutput<float>> sk_fridge;
 std::shared_ptr<SKOutput<float>> sk_freezer;
@@ -206,20 +210,128 @@ void update_controller() {
     last_display_activity_ms = now;
     display.set_enabled(true);
   }
-  if (alarm_visual_active && settings.buzzer_enabled) {
-    tone(hw::kBuzzerPin, hw::kBuzzerFrequencyHz);
-  } else {
-    noTone(hw::kBuzzerPin);
-  }
+  buzzer.update(now, alarm_visual_active, settings.buzzer_mode);
   sk_alarm->set(alarm_active);
+}
+
+float gauge_fraction(float value, float minimum, float maximum) {
+  if (maximum <= minimum) return 0.5f;
+  return constrain((value - minimum) / (maximum - minimum), 0.0f, 1.0f);
+}
+
+uint8_t option_index(const uint8_t* options, uint8_t count, uint8_t value) {
+  if (count == 0) return 0;
+  for (uint8_t i = 0; i < count; ++i) {
+    if (options[i] == value) return i;
+  }
+  return 0;
+}
+
+bool setting_supports_encoder_gauge(uint8_t setting) {
+  return setting <= 4 || (setting >= 6 && setting <= 12) || setting == 15 ||
+         setting == 16;
+}
+
+float selected_setting_gauge_fraction() {
+  if (selected_setting == 0) {
+    return gauge_fraction(settings.high_c,
+                          settings.low_c + hw::kFridgeControlMinimumBandC,
+                          hw::kFridgeControlMaxC);
+  }
+  if (selected_setting == 1) {
+    return gauge_fraction(settings.low_c, hw::kFridgeControlMinC,
+                          settings.high_c - hw::kFridgeControlMinimumBandC);
+  }
+  if (selected_setting == 2) {
+    return gauge_fraction(settings.freezer_lockout_c,
+                          hw::kFreezerThresholdMinC,
+                          hw::kFreezerThresholdMaxC);
+  }
+  if (selected_setting == 3) {
+    return gauge_fraction(settings.fridge_alarm_c, hw::kFridgeAlarmMinC,
+                          hw::kFridgeAlarmMaxC);
+  }
+  if (selected_setting == 4) {
+    return gauge_fraction(settings.freezer_alarm_c, hw::kFreezerAlarmMinC,
+                          hw::kFreezerAlarmMaxC);
+  }
+  if (selected_setting >= 6 && selected_setting <= 8) {
+    return gauge_fraction(calibration_c[selected_setting - 6],
+                          -hw::kCalibrationLimitC, hw::kCalibrationLimitC);
+  }
+  if (selected_setting == 9) {
+    return gauge_fraction(settings.fan_delay_s, hw::kFanDelayMinS,
+                          hw::kFanDelayMaxS);
+  }
+  if (selected_setting == 10) {
+    return gauge_fraction(settings.spillover_min_on_min,
+                          hw::kFanMinimumOnMin, hw::kFanMinimumOnMax);
+  }
+  if (selected_setting == 11) {
+    return gauge_fraction(settings.circulation_min_on_min,
+                          hw::kFanMinimumOnMin, hw::kFanMinimumOnMax);
+  }
+  if (selected_setting == 12) {
+    const uint8_t index = option_index(
+        hw::kEmergencySpilloverOptions, hw::kEmergencySpilloverOptionCount,
+        settings.emergency_spillover_on_min);
+    return gauge_fraction(index, 0, hw::kEmergencySpilloverOptionCount - 1);
+  }
+  if (selected_setting == 15) {
+    const uint8_t index = option_index(
+        hw::kOledContrastOptions, hw::kOledContrastOptionCount,
+        settings.oled_contrast_percent);
+    return gauge_fraction(index, 0, hw::kOledContrastOptionCount - 1);
+  }
+  if (selected_setting == 16) {
+    const uint8_t index = option_index(
+        hw::kDisplayTimeoutOptions, hw::kDisplayTimeoutOptionCount,
+        settings.display_timeout_min);
+    return gauge_fraction(index, 0, hw::kDisplayTimeoutOptionCount - 1);
+  }
+  return 0.0f;
+}
+
+uint16_t selected_setting_gauge_value() {
+  const float fraction = selected_setting_gauge_fraction();
+  return static_cast<uint16_t>(roundf(
+      hw::kEncoderGaugeMinValue +
+      fraction * (hw::kEncoderGaugeMaxValue - hw::kEncoderGaugeMinValue)));
+}
+
+void set_encoder_navigation_mode() {
+  if (!encoder_available) return;
+  encoder_gain = hw::kEncoderNavigationGain;
+  encoder_baseline_value = hw::kEncoderNeutralValue;
+  encoder.setGainCoefficient(encoder_gain);
+  encoder.setEncoderValue(encoder_baseline_value);
+  encoder_counterclockwise_substeps = 0;
+}
+
+void set_encoder_gauge_mode() {
+  if (!encoder_available) return;
+  if (!setting_supports_encoder_gauge(selected_setting)) {
+    set_encoder_navigation_mode();
+    return;
+  }
+  encoder_gain = hw::kEncoderGaugeGain;
+  encoder_baseline_value = selected_setting_gauge_value();
+  encoder.setGainCoefficient(encoder_gain);
+  encoder.setEncoderValue(encoder_baseline_value);
+  encoder_counterclockwise_substeps = 0;
 }
 
 int32_t read_encoder_delta() {
   const int32_t position = encoder.getEncoderValue();
-  const int32_t delta =
-      position - static_cast<int32_t>(hw::kEncoderNeutralValue);
+  int32_t delta = position - static_cast<int32_t>(encoder_baseline_value);
   if (delta != 0) {
-    encoder.setEncoderValue(hw::kEncoderNeutralValue);
+    encoder.setEncoderValue(encoder_baseline_value);
+  }
+  // DFRobot describes gain as the count accuracy per detent. Some module
+  // revisions expose the gain-scaled count directly while others have been
+  // observed reporting one count per transition, so accept either form.
+  if (encoder_gain > 1 && abs(delta) >= encoder_gain) {
+    delta /= static_cast<int32_t>(encoder_gain);
   }
   return delta;
 }
@@ -236,7 +348,7 @@ void update_encoder() {
   const int32_t raw_delta = read_encoder_delta();
   const bool raw_button_down = encoder.detectButtonDown();
   if (raw_button_down) {
-    encoder.setEncoderValue(hw::kEncoderNeutralValue);
+    encoder.setEncoderValue(encoder_baseline_value);
     encoder_counterclockwise_substeps = 0;
   }
   const uint32_t now = millis();
@@ -263,12 +375,9 @@ void update_encoder() {
 
   int32_t delta = 0;
   if (raw_delta > 0) {
-    // Clockwise already reports one raw count at each physical detent.
     encoder_counterclockwise_substeps = 0;
     delta = raw_delta;
   } else if (raw_delta < 0) {
-    // Counterclockwise reports once between detents and again at the detent.
-    // Accumulate both transitions so the UI moves only on the physical click.
     const int32_t accumulated_counts =
         encoder_counterclockwise_substeps - raw_delta;
     delta = -(accumulated_counts /
@@ -291,6 +400,7 @@ void update_encoder() {
     display_awake = true;
     last_display_activity_ms = now;
     last_menu_activity_ms = 0;
+    set_encoder_navigation_mode();
     display.set_enabled(true);
     return;
   }
@@ -300,7 +410,9 @@ void update_encoder() {
     if (button_down) {
       alarm_acknowledged = true;
       alarm_visual_active = false;
-      noTone(hw::kBuzzerPin);
+      menu_editing = false;
+      set_encoder_navigation_mode();
+      buzzer.stop();
     }
     return;
   }
@@ -330,6 +442,7 @@ void update_encoder() {
     }
     assignment_mode = false;
     assignment_sensor = 0;
+    set_encoder_navigation_mode();
     return;
   }
 
@@ -338,12 +451,14 @@ void update_encoder() {
       now - last_menu_activity_ms < kMenuActivityTimeoutMs;
   if (!menu_active) {
     last_menu_activity_ms = 0;
-    menu_editing = false;
-    // Rotation on the home screen only counts as display activity. A button
-    // press is the sole way to enter settings, and every entry starts at item 1.
+    if (menu_editing || encoder_gain != hw::kEncoderNavigationGain) {
+      menu_editing = false;
+      set_encoder_navigation_mode();
+    }
     if (button_down) {
       selected_setting = 0;
       last_menu_activity_ms = now;
+      set_encoder_navigation_mode();
     }
     return;
   }
@@ -369,8 +484,14 @@ void update_encoder() {
             break;
           }
         }
+        set_encoder_navigation_mode();
       } else {
         menu_editing = true;
+        if (setting_supports_encoder_gauge(selected_setting)) {
+          set_encoder_gauge_mode();
+        } else {
+          set_encoder_navigation_mode();
+        }
       }
     }
     return;
@@ -460,7 +581,12 @@ void update_encoder() {
           hw::kEmergencySpilloverOptions[next_option];
       setting_changed = true;
     } else if (selected_setting == 13) {
-      settings.buzzer_enabled = !settings.buzzer_enabled;
+      int32_t next_mode =
+          (static_cast<int32_t>(settings.buzzer_mode) + delta) %
+          hw::kBuzzerModeCount;
+      if (next_mode < 0) next_mode += hw::kBuzzerModeCount;
+      settings.buzzer_mode = static_cast<uint8_t>(next_mode);
+      buzzer.preview(settings.buzzer_mode, now);
       setting_changed = true;
     } else if (selected_setting == 14 && faults.count() > 0) {
       selected_error = wrapped_index(selected_error, delta, faults.count());
@@ -499,10 +625,16 @@ void update_encoder() {
     if (setting_changed) {
       NormalizeControllerSettings(settings);
       mark_settings_dirty();
+      if (setting_supports_encoder_gauge(selected_setting)) {
+        set_encoder_gauge_mode();
+      }
     }
   }
 
-  if (button_down) menu_editing = false;
+  if (button_down) {
+    menu_editing = false;
+    set_encoder_navigation_mode();
+  }
 }
 
 void update_display() {
@@ -597,8 +729,7 @@ void setup() {
   digitalWrite(hw::kCirculationFanPin, hw::kFanActiveHigh ? LOW : HIGH);
   pinMode(hw::kSpilloverFanPin, OUTPUT);
   pinMode(hw::kCirculationFanPin, OUTPUT);
-  pinMode(hw::kBuzzerPin, OUTPUT);
-  noTone(hw::kBuzzerPin);
+  buzzer.begin();
   write_fan(hw::kSpilloverFanPin, false);
   write_fan(hw::kCirculationFanPin, false);
 
@@ -614,8 +745,7 @@ void setup() {
   Wire.begin(hw::kI2cSdaPin, hw::kI2cSclPin);
   encoder_available = encoder.begin() == NO_ERR;
   if (encoder_available) {
-    encoder.setGainCoefficient(hw::kEncoderGain);
-    encoder.setEncoderValue(hw::kEncoderNeutralValue);
+    set_encoder_navigation_mode();
   }
   display.begin();
   display.set_contrast(settings.oled_contrast_percent);
@@ -652,13 +782,12 @@ void loop() {
     }
 
     splash_active = false;
-    // End the physical output test deterministically before normal control.
     write_fan(hw::kSpilloverFanPin, false);
     write_fan(hw::kCirculationFanPin, false);
     control_output.spillover = false;
     control_output.circulation = false;
     if (encoder_available) {
-      encoder.setEncoderValue(hw::kEncoderNeutralValue);
+      set_encoder_navigation_mode();
       encoder.detectButtonDown();
     }
     last_control_ms = now;
