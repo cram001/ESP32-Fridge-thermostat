@@ -65,9 +65,9 @@ The top line uses fixed regions so information never overlaps:
 - During an active alarm, a press acknowledges the alarm before it can be used
   for menu navigation.
 
-The SEN0502 LED ring is normally effectively dark. During supported edits it is
-used as a value gauge showing the selected value's approximate position between
-minimum and maximum.
+The SEN0502 LED ring is intentionally left effectively inactive. Menu navigation
+and value editing both use the same stable gain-1 detent handling; the LED ring
+is not used as a setting-value gauge.
 
 ## Assigning/replacing temperature probes
 
@@ -82,22 +82,46 @@ order.
 Each list includes `No sensor assigned`. One physical ROM cannot remain assigned
 to two roles; assigning it to a new role clears the old duplicate assignment.
 
-The controller re-scans the 1-Wire bus every 30 seconds and requires two
-matching scans before changing the detected-device list. A newly connected or
-replacement probe should therefore appear automatically without rebooting,
-typically within about one minute. A previously assigned probe that disappears
-is still reported as missing immediately through normal temperature polling.
+The controller performs a true 1-Wire ROM search every 5 seconds and requires
+two matching scans before changing the detected-device list. A newly connected
+or replacement DS18B20 should therefore normally appear within about 5–10
+seconds without rebooting. Discovery validates the ROM CRC and accepts the
+DS18B20 family used by this controller. Reconnecting the same physical probe
+preserves its saved role because assignments are stored by ROM.
+
+A probe can remain assigned even while it is physically absent. Its saved ROM is
+not cleared merely because the bus cannot currently see it. Do not intentionally
+select and save `No sensor assigned` unless you want to clear that role.
 
 The freezer probe is optional. Without it, fridge control continues but freezer
 lockout is unavailable. The fridge probe is required for normal thermostat
 control.
 
-## How fridge temperature control works
+## How temperature input validity works
 
-A new sensor conversion is collected about every five seconds. The displayed
-fridge/freezer/ambient values are rolling averages of six samples (roughly 30
-seconds). Freezer lockout uses the latest valid freezer reading so safety action
-is not delayed by averaging.
+A new conversion is requested about every five seconds. A role is considered
+healthy when its assigned ROM is present and recent valid samples continue to
+arrive. The input checks are based on communication integrity and freshness,
+**not on whether the numeric temperature changes**.
+
+- The 1-Wire discovery ROM must pass CRC and be a DS18B20-family device.
+- DallasTemperature validates the sensor scratchpad CRC when reading it.
+- `DEVICE_DISCONNECTED`/failed reads are rejected.
+- The DS18B20 +85 C power-on/reset value is rejected.
+- Values outside the supported physical range are rejected.
+- Two transient failed five-second reads are tolerated using the most recent
+  known-good sample.
+- A third failed read, or approximately 15 seconds without a good sample, marks
+  the assigned role `read failed` and removes its temperature from control.
+- One subsequent good sample recovers the role automatically.
+
+A cabin, refrigerator, or freezer can legitimately stay on exactly the same
+10-bit DS18B20 reading for hours. An unchanged numeric value is therefore **not**
+a sensor fault and does not raise an advisory.
+
+The displayed fridge/freezer/ambient values are rolling averages of six good
+samples (roughly 30 seconds during normal operation). Freezer lockout uses the
+latest valid freezer reading so safety action is not delayed by averaging.
 
 - At `Fridge max T`, a persistent warm condition starts spillover after the fan
   trigger delay. Circulation starts with it.
@@ -119,8 +143,8 @@ is not delayed by averaging.
 
 ## Fridge-probe failure / GET-HOME mode
 
-A missing/invalid fridge probe raises a persistent alarm and disables normal
-thermostat control. Spillover remains OFF by default.
+A missing, read-failed, or invalid fridge probe raises a persistent alarm and
+disables normal thermostat control. Spillover remains OFF by default.
 
 The user may deliberately select 5, 10, 20, 30, or 40 minutes ON per hour. A
 valid warm freezer still enforces lockout. A missing freezer probe does not
@@ -185,19 +209,19 @@ stop it early. A real alarm cancels a service output test.
   conditions are satisfied.
 - Pressing the encoder acknowledges the audible/full-screen alert but does not
   clear the underlying alarm. The alarm clears only when its condition clears.
-- Missing/out-of-range probes, Signal K disconnection, encoder problems, and a
-  spillover run exceeding 60 minutes appear under `ACTIVE ERRORS`.
-- If the fridge, freezer, or ambient temperature reading remains exactly at the
-  same DS18B20 measurement step for about 30 minutes, the warning triangle and
-  `ACTIVE ERRORS` advise `... temp not changing`. This does **not** by itself
-  disable control; it is a prompt to inspect the probe/wiring if the reading is
-  implausibly static.
+- Missing, read-failed, or out-of-range probes, Signal K disconnection, encoder
+  problems, and a spillover run exceeding 60 minutes appear under
+  `ACTIVE ERRORS`.
+- A stable temperature is not a fault. Sensor validity is based on the assigned
+  ROM being present plus fresh CRC-valid temperature samples.
 
 ## Long-uptime behavior
 
 The firmware is designed for unattended continuous operation:
 
 - periodic sensor and encoder hardware re-checks include automatic recovery;
+- 1-Wire discovery uses a direct ROM search rather than DallasTemperature's
+  boot-time cached device count, so probes can be added/reconnected at runtime;
 - hot temperature/display paths use fixed buffers rather than temporary Arduino
   `String` objects;
 - all possible detected-probe Signal K output objects are created at startup so
@@ -216,4 +240,4 @@ Run the host-side controller tests without ESP32 hardware:
 ```
 
 The native suite includes rollover coverage for fan qualification, minimum fan
-runtime, and GET-HOME hourly timing.
+runtime, GET-HOME hourly timing, and sensor freshness/failure recovery logic.
