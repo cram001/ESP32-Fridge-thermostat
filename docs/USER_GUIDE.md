@@ -7,189 +7,238 @@ spillover fridge controller.
 
 - Verify the ESP32 pin assignments and fan-output polarity in
   `include/hardware_config.h`.
-- Drive each fan through its MOSFET or relay module. Do not power a fan directly
+- Drive each fan through its MOSFET/relay module. Do not power a fan directly
   from an ESP32 GPIO pin.
 - Connect the fridge, freezer, and ambient DS18B20 probes to the shared 1-Wire
   input with the required pull-up resistor.
-- Confirm the spillover fan moves cold freezer air into the top of the fridge
-  compartment.
-- Confirm the circulation fan moves air from the lower part of the fridge
-  compartment toward the top.
+- Confirm the spillover fan moves cold freezer air into the top of the fridge.
+- Confirm the circulation fan moves air through the refrigerator compartment.
+- The DFRobot DFR0032 buzzer module is powered from 5 V; its signal remains on
+  the configured ESP32 output.
 
 ## First startup
 
 1. Build and upload the firmware with PlatformIO.
 2. Confirm the expected firmware version on the OLED splash screen.
-3. During the 15-second splash screen, verify that both fans run. This is an
-   intentional output test.
+3. During the 15-second splash screen, verify that both fans run.
 4. Complete Wi-Fi provisioning through SensESP. Signal K is optional for local
    thermostat operation.
-5. Assign the three probes by their ROM codes before relying on temperature
-   control.
+5. Assign the probes by ROM code before relying on temperature control.
 6. Review the temperature thresholds, fan delay, minimum runtimes, alarms, and
    display settings.
 
-Existing saved settings are retained after a firmware update. After uploading a
-new release, check the firmware version and review the saved settings rather
-than assuming that new default values were applied.
+Existing saved settings are retained after a firmware update unless startup
+validation finds an invalid/out-of-range configuration. In that case the
+control/calibration settings are restored to coherent defaults and written back
+to storage; saved sensor assignments and vessel name are retained.
+
+## Home screen
+
+The top line uses fixed regions so information never overlaps:
+
+`Signal K status | LOCKOUT / GET-HOME | warning triangle | ambient temperature`
+
+- `LOCKOUT` means a valid freezer reading is at/above the configured freezer
+  lockout temperature, so spillover is inhibited while the freezer recovers.
+- `GET-HOME` means the fridge probe has failed and a non-zero emergency
+  spillover duty cycle is selected.
+- If both apply, the banner alternates between them.
+- The warning triangle has a fixed position immediately left of ambient
+  temperature and flashes whenever any active fault/advisory exists.
 
 ## Using the rotary encoder
 
-- From the home screen, rotation only wakes the display or records activity. It
-  does not open settings.
-- Press the encoder to enter settings. The menu always opens at item 1.
-- Rotate clockwise or counterclockwise to browse all 21 items. Browsing wraps
+- From the home screen, press the encoder to enter settings. The menu opens at
+  item 1.
+- Rotate clockwise or counterclockwise to browse all 23 items. Browsing wraps
   in both directions.
-- Press a normal menu item to enter edit mode.
-- Rotate to change its value, then press again to return to browsing.
-- Sensor-assignment items open their assignment screen directly. Rotate to
-  select a detected probe and press to save it.
-- The menu returns to the home screen after approximately 10 seconds without
-  input.
-- If the display is asleep, the first rotation or press wakes it. Press again
-  to enter the menu.
+- Press a normal setting to enter edit mode.
+- The original value is captured when edit begins. Rotation previews a change
+  in RAM only.
+- **Press again to commit the change.** If the value changed, it is written to
+  storage; a brief `SAVED` screen confirms leaving edit mode.
+- If edit mode times out, the encoder disconnects, or an alarm interrupts the
+  edit, the original value is restored instead of saving a partial change.
+- Sensor-assignment items save immediately when the desired probe is pressed.
+- The menu returns home after approximately 10 seconds without input.
+- If the display is asleep, the first rotation/press only wakes it.
 - During an active alarm, a press acknowledges the alarm before it can be used
-  to open settings.
+  for menu navigation.
 
-Changes are saved automatically shortly after editing.
+The SEN0502 LED ring is intentionally left effectively inactive. Menu navigation
+and value editing both use the same stable gain-1 detent handling; the LED ring
+is not used as a setting-value gauge.
 
-## Assigning temperature probes
+## Assigning/replacing temperature probes
 
-Probe roles are stored by the sensor's unique 64-bit ROM code, not by discovery
+Probe roles are stored by each sensor's unique 64-bit ROM code, never by bus
 order.
 
 1. Open `Assign fridge`, `Assign freezer`, or `Assign ambient`.
 2. Warm the desired probe with your hand.
-3. Rotate through the detected probes and watch the live temperature to
-   identify it.
+3. Rotate through detected probes and watch the live temperature.
 4. Press to save the selected probe.
-5. Repeat for the other roles.
 
-Each assignment list includes a final `No sensor assigned` option. Select it to
-clear that role. The option remains available even when no probes are currently
-detected, allowing a previously saved assignment to be removed.
+Each list includes `No sensor assigned`. One physical ROM cannot remain assigned
+to two roles; assigning it to a new role clears the old duplicate assignment.
 
-One physical probe cannot remain assigned to multiple roles. Assigning it to a
-new role clears its previous role. Power-cycle the controller after adding or
-replacing a probe so the 1-Wire bus discovers it.
+The controller performs a true 1-Wire ROM search every 5 seconds and requires
+two matching scans before changing the detected-device list. A newly connected
+or replacement DS18B20 should therefore normally appear within about 5–10
+seconds without rebooting. Discovery validates the ROM CRC and accepts the
+DS18B20 family used by this controller. Reconnecting the same physical probe
+preserves its saved role because assignments are stored by ROM.
 
-The freezer probe is optional. Without it, normal fridge control continues but
-freezer-temperature lockout is unavailable. The fridge probe is required for
-normal thermostat control.
+A probe can remain assigned even while it is physically absent. Its saved ROM is
+not cleared merely because the bus cannot currently see it. Do not intentionally
+select and save `No sensor assigned` unless you want to clear that role.
 
-## How fridge temperature control works
+The freezer probe is optional. Without it, fridge control continues but freezer
+lockout is unavailable. The fridge probe is required for normal thermostat
+control.
 
-The controller takes a new sensor reading about every five seconds. The OLED
-and normal thermostat logic use a rolling average of the latest six readings,
-or roughly 30 seconds of temperature history. Freezer lockout uses the latest
-valid freezer reading so it is not delayed by that average.
+## How temperature input validity works
 
-The two fridge settings form one control band:
+A new conversion is requested about every five seconds. A role is considered
+healthy when its assigned ROM is present and recent valid samples continue to
+arrive. The input checks are based on communication integrity and freshness,
+**not on whether the numeric temperature changes**.
 
-- `Fridge max T` is the warm limit. When the filtered fridge temperature stays
-  at or above this value for the fan trigger delay, spillover starts.
-- `Fridge min T` is the cool limit. Spillover may stop at or below this value,
-  but only after its minimum runtime has completed.
-- `Fridge min T` must remain at least 0.5°C below `Fridge max T`.
+- The 1-Wire discovery ROM must pass CRC and be a DS18B20-family device.
+- DallasTemperature validates the sensor scratchpad CRC when reading it.
+- `DEVICE_DISCONNECTED`/failed reads are rejected.
+- The DS18B20 +85 C power-on/reset value is rejected.
+- Values outside the supported physical range are rejected.
+- Two transient failed five-second reads are tolerated using the most recent
+  known-good sample.
+- A third failed read, or approximately 15 seconds without a good sample, marks
+  the assigned role `read failed` and removes its temperature from control.
+- One subsequent good sample recovers the role automatically.
 
-Circulation starts immediately whenever spillover starts. It can also start
-independently when the filtered fridge temperature remains at or below
-`Fridge min T` for the fan trigger delay. Once either fan starts, its own
-minimum runtime is enforced.
+A cabin, refrigerator, or freezer can legitimately stay on exactly the same
+10-bit DS18B20 reading for hours. An unchanged numeric value is therefore **not**
+a sensor fault and does not raise an advisory.
 
-Reaching `Fridge min T` never ends spillover early. Among valid temperature
-conditions, reaching `Freez T lockout` is the only event that overrides the
-spillover minimum runtime and stops spillover immediately. Sensor faults retain
-their separate fail-safe behavior.
+The displayed fridge/freezer/ambient values are rolling averages of six good
+samples (roughly 30 seconds during normal operation). Freezer lockout uses the
+latest valid freezer reading so safety action is not delayed by averaging.
+
+- At `Fridge max T`, a persistent warm condition starts spillover after the fan
+  trigger delay. Circulation starts with it.
+- At `Fridge min T`, spillover stops only after its minimum runtime has elapsed.
+- At/below `Fridge min T`, circulation can run independently after the fan
+  trigger delay.
+- A valid freezer reading at/above `Freez T lockout` stops/blocks spillover
+  immediately, overriding spillover minimum runtime.
+- `Fridge min T` must remain at least 0.5 C below `Fridge max T`.
 
 ### Control summary
 
 | Condition | Spillover fan | Circulation fan |
 |---|---:|---:|
-| Fridge at or above `Fridge max T` after delay | ON | ON |
+| Fridge at/above `Fridge max T` after delay | ON | ON |
 | Fridge between MIN and MAX | Normally OFF | Normally OFF |
-| Fridge at or below `Fridge min T` after delay | OFF after minimum runtime | ON |
-| Freezer at or above `Freez T lockout` | Immediately OFF | Controlled normally |
+| Fridge at/below `Fridge min T` after delay | OFF after minimum runtime | ON |
+| Valid freezer at/above `Freez T lockout` | Immediately OFF | Controlled normally |
 
-An active minimum runtime can temporarily keep a fan on even when the table
-says it would normally be off.
+## Fridge-probe failure / GET-HOME mode
 
-## Recommended starting values
+A missing, read-failed, or invalid fridge probe raises a persistent alarm and
+disables normal thermostat control. Spillover remains OFF by default.
 
-These are starting points, not universal requirements:
+The user may deliberately select 5, 10, 20, 30, or 40 minutes ON per hour. A
+valid warm freezer still enforces lockout. A missing freezer probe does not
+prevent GET-HOME operation. Select OFF when the temporary mode is no longer
+required.
 
-| Setting | Suggested value |
-|---|---:|
-| Fridge max T | 5.0°C |
-| Fridge min T | 4.0°C |
-| Fan delay | 15 seconds |
-| Spill min ON | 2 minutes |
-| Circ min ON | 2 minutes |
+## Buzzer
 
-Observe several complete cooling cycles before making changes. If cold air
-blows directly on the fridge probe and causes early threshold crossings,
-increase the relevant minimum runtime or relocate/shield the probe. Change one
-setting at a time and allow the compartment to stabilize.
+The single Buzzer setting selects both enable state and alarm pattern:
+
+- `OFF`
+- `STEADY`
+- `DOUBLE`
+- `HI-LO`
+- `TRIPLE`
+
+Rotating through audible modes while editing plays a brief preview. The output
+test can still exercise the buzzer even if normal Buzzer mode is OFF.
+
+## Output test
+
+Open `Test outputs` and select:
+
+- `SPILLOVER`
+- `CIRCULATION`
+- `BUZZER`
+- `EXIT`
+
+A selected output runs for five seconds and then stops automatically. Press to
+stop it early. A real alarm cancels a service output test.
 
 ## Device menu reference
 
 | Item | OLED label | Purpose and limits |
 |---:|---|---|
-| 1 | `Fridge max T` | Filtered fridge temperature that requests spillover ON. Absolute range: −9.5°C to 10°C; its live lower limit is item 2 plus 0.5°C. |
-| 2 | `Fridge min T` | Spillover OFF target after minimum runtime; also requests cold circulation. Absolute range: −10°C to 9.5°C; its live upper limit is item 1 minus 0.5°C. |
-| 3 | `Freez T lockout` | Latest freezer temperature that immediately stops and blocks spillover. Range: −30°C to 10°C. |
-| 4 | `Fridge alarm` | High fridge-temperature alarm. Range: 0°C to 30°C. |
-| 5 | `Freezer alarm` | High freezer-temperature alarm. Range: −20°C to 10°C. |
-| 6 | `Units` | Select Celsius or Fahrenheit for the OLED and physical menu. Internal storage and SensESP settings remain Celsius. |
-| 7 | `Cal Fridge` | Offset applied to the assigned fridge probe. Range: ±5°C or the equivalent Fahrenheit offset. |
-| 8 | `Cal Freezer` | Offset applied to the assigned freezer probe. Range: ±5°C or equivalent. |
-| 9 | `Cal Ambient` | Offset applied to the assigned ambient probe. Range: ±5°C or equivalent. |
-| 10 | `Fan delay` | How long a fresh, filtered start condition must persist. Range: 5–180 seconds in 5-second steps. Circulation follows an active spillover fan immediately. |
-| 11 | `Spill min ON` | Minimum spillover runtime once started. Range: 1–5 minutes. Freezer lockout and fail-safe faults can stop it earlier. |
-| 12 | `Circ min ON` | Minimum circulation runtime once started. Range: 1–5 minutes. |
-| 13 | `Get-me-home fan` | Optional spillover duty cycle used only when the fridge probe has failed: OFF or 5, 10, 20, 30, or 40 minutes per hour. |
-| 14 | `Buzzer` | Enable or disable the audible alarm. Visual and Signal K alarms remain available when the buzzer is disabled. |
-| 15 | `ACTIVE ERRORS` | View active fault count, code, and message. Press to browse faults, rotate through them, and press to return. |
-| 16 | `OLED contrast` | Display brightness choices: 5%, 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, or 100%. |
-| 17 | `Display off` | Automatic display timeout: Never, 1, 5, 10, 15, 20, 30, or 60 minutes. |
-| 18 | `Display layout` | Choose `FRDG \| FRZ` or `FRZ \| FRDG` on the home screen. |
-| 19 | `Assign fridge` | Select the probe used for fridge display and control, or select `No sensor assigned` to clear the role. |
-| 20 | `Assign freezer` | Select the probe used for freezer display, alarm, and spillover lockout, or clear the role. |
-| 21 | `Assign ambient` | Select the probe used for ambient/cabin display and publishing, or clear the role. |
-
-## SensESP web settings
-
-The SensESP web interface exposes the same saved settings and shared numeric
-limits. Temperature values in the web interface are in Celsius even when the
-OLED is set to Fahrenheit. Device-menu edits and web edits are normalized by
-the same runtime limits when saved.
-
-Use the OLED assignment workflow when possible because it shows live probe
-temperatures. Advanced users may enter a known 16-character sensor ROM in the
-web interface.
+| 1 | `Fridge max T` | Spillover ON threshold. Absolute range −9.5 to 10 C; live lower limit is item 2 + 0.5 C. |
+| 2 | `Fridge min T` | Spillover OFF/cold-circulation threshold. Absolute range −10 to 9.5 C; live upper limit is item 1 − 0.5 C. |
+| 3 | `Freez T lockout` | Latest valid freezer temperature that immediately blocks spillover. −30 to 10 C. |
+| 4 | `Fridge alarm` | High fridge-temperature alarm. 0 to 30 C. |
+| 5 | `Freezer alarm` | High freezer-temperature alarm. −20 to 10 C. |
+| 6 | `Units` | Celsius/Fahrenheit for OLED/menu. Internal/SensESP values remain Celsius. |
+| 7 | `Cal Fridge` | Fridge calibration offset, ±5 C equivalent. |
+| 8 | `Cal Freezer` | Freezer calibration offset, ±5 C equivalent. |
+| 9 | `Cal Ambient` | Ambient calibration offset, ±5 C equivalent. |
+| 10 | `Fan delay` | Persistent start condition, 5–180 s in 5-s steps. |
+| 11 | `Spill min ON` | Spillover minimum runtime, 1–5 min. |
+| 12 | `Circ min ON` | Circulation minimum runtime, 1–5 min. |
+| 13 | `Get-me-home fan` | OFF or 5/10/20/30/40 minutes ON per hour when fridge probe has failed. |
+| 14 | `Buzzer` | OFF / STEADY / DOUBLE / HI-LO / TRIPLE. |
+| 15 | `ACTIVE ERRORS` | Browse active faults/advisories. |
+| 16 | `OLED contrast` | 5–100% selectable values. |
+| 17 | `Display off` | Never, 1, 5, 10, 15, 20, 30, or 60 min. |
+| 18 | `Display layout` | `FRDG | FRZ` or `FRZ | FRDG`. |
+| 19 | `Test outputs` | Five-second spillover/circulation/buzzer service test. |
+| 20 | `Assign fridge` | Assign/clear fridge probe. |
+| 21 | `Assign freezer` | Assign/clear freezer probe. |
+| 22 | `Assign ambient` | Assign/clear ambient probe. |
+| 23 | `About` | Firmware version, build date, and copyright/author information. |
 
 ## Alarms and faults
 
-- A fridge or freezer high-temperature alarm activates only after startup
-  arming conditions are satisfied.
-- Press the encoder to acknowledge the audible and full-screen alarm. The
-  underlying Signal K alarm remains active until its condition clears.
-- A missing or invalid fridge probe disables normal thermostat control.
-- Get-me-home mode is OFF by default and must be enabled deliberately.
-- A missing freezer probe removes freezer lockout but does not disable normal
-  fridge control.
-- A long spillover run, encoder problem, missing probe, invalid probe, or
-  Signal K connection problem appears under `ACTIVE ERRORS`.
+- A fridge/freezer high-temperature alarm activates only after startup arming
+  conditions are satisfied.
+- Pressing the encoder acknowledges the audible/full-screen alert but does not
+  clear the underlying alarm. The alarm clears only when its condition clears.
+- Missing, read-failed, or out-of-range probes, Signal K disconnection, encoder
+  problems, and a spillover run exceeding 60 minutes appear under
+  `ACTIVE ERRORS`.
+- A stable temperature is not a fault. Sensor validity is based on the assigned
+  ROM being present plus fresh CRC-valid temperature samples.
 
-## Fine-tuning
+## Long-uptime behavior
 
-- If the fridge becomes too warm before cooling begins, reduce
-  `Fridge max T` or shorten the fan delay.
-- If cooling stops too soon, reduce `Fridge min T` or increase
-  `Spill min ON`.
-- If the compartment overshoots too cold, increase `Fridge min T` or reduce
-  `Spill min ON`.
-- If temperature layering persists, increase `Circ min ON`.
-- If fans respond to a brief door opening or a cold plume at the sensor,
-  increase the fan delay.
-- Keep the fridge probe out of the direct spillover air stream when practical.
+The firmware is designed for unattended continuous operation:
+
+- periodic sensor and encoder hardware re-checks include automatic recovery;
+- 1-Wire discovery uses a direct ROM search rather than DallasTemperature's
+  boot-time cached device count, so probes can be added/reconnected at runtime;
+- hot temperature/display paths use fixed buffers rather than temporary Arduino
+  `String` objects;
+- all possible detected-probe Signal K output objects are created at startup so
+  runtime discovery does not allocate new output objects;
+- the loop task is supervised by the ESP32 task watchdog and will reset on a
+  sustained software/peripheral wedge;
+- timers use unsigned elapsed-time arithmetic so normal control continues
+  through the `millis()` rollover.
+
+## Development checks
+
+Run the host-side controller tests without ESP32 hardware:
+
+```sh
+./tools/run-native-tests.sh
+```
+
+The native suite includes rollover coverage for fan qualification, minimum fan
+runtime, GET-HOME hourly timing, and sensor freshness/failure recovery logic.

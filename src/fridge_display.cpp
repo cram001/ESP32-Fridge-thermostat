@@ -1,11 +1,12 @@
 #include "fridge_display.h"
 
 namespace {
-constexpr uint8_t kSettingCount = 22;
+constexpr uint8_t kSettingCount = 23;
 constexpr uint8_t kLayoutSetting = 17;
 constexpr uint8_t kOutputTestSetting = 18;
 constexpr uint8_t kFirstAssignmentSetting = 19;
 constexpr uint8_t kLastAssignmentSetting = 21;
+constexpr uint8_t kAboutSetting = 22;
 }
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
@@ -173,8 +174,11 @@ void FridgeDisplay::draw_assignment(int x, int y,
   } else {
     draw_temperature(x, y + 35, "Live", model.assignment_temp_c,
                      model.fahrenheit);
-    snprintf(line, sizeof(line), "ROM ...%s",
-             model.assignment_rom.substring(8).c_str());
+    const char* rom_suffix =
+        model.assignment_rom && strlen(model.assignment_rom) > 8
+            ? model.assignment_rom + 8
+            : (model.assignment_rom ? model.assignment_rom : "");
+    snprintf(line, sizeof(line), "ROM ...%s", rom_suffix);
     oled_.drawStr(x, y + 47, line);
   }
   oled_.drawStr(x, y + 61, "Rotate / press assign");
@@ -198,6 +202,10 @@ void FridgeDisplay::draw_warning_triangle(int x, int y) {
 }
 
 void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
+  // Fixed top-row zones:
+  // [ Signal K ] [ LOCKOUT / GET-HOME ] [ warning ] [ ambient ]
+  // Keeping these regions stable prevents mode banners and fault indication
+  // from ever drawing on top of each other.
   draw_wifi_icon(x + 9, y + 9, model.signalk_connected);
 
   char ambient_text[8];
@@ -212,15 +220,57 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   }
   oled_.setFont(u8g2_font_5x7_tf);
   const int ambient_w = oled_.getStrWidth(ambient_text);
-  oled_.drawStr(x + 125 - ambient_w, y + 9, ambient_text);
+  const int ambient_x = x + 125 - ambient_w;
+  oled_.drawStr(ambient_x, y + 9, ambient_text);
+
+  constexpr int kWarningTriangleX = 84;
+  constexpr int kBannerLeft = 22;
+  constexpr int kBannerRight = 81;
+
+  // Operational-mode banner. GET-HOME means the fridge probe is failed and a
+  // non-zero emergency duty cycle is selected. LOCKOUT means the freezer is
+  // still above its lockout threshold, so normal spillover is inhibited.
+  const bool get_home_mode =
+      model.control->sensor_fault &&
+      model.settings->emergency_spillover_on_min != 0;
+  const bool freezer_lockout = model.control->freezer_lockout;
+  const char* banner = nullptr;
+  if (get_home_mode && freezer_lockout) {
+    // Both states matter. Alternate rather than hiding either one.
+    banner = ((millis() / 2000UL) % 2U == 0U) ? "LOCKOUT" : "GET-HOME";
+  } else if (freezer_lockout) {
+    banner = "LOCKOUT";
+  } else if (get_home_mode) {
+    banner = "GET-HOME";
+  }
+
+  if (banner != nullptr) {
+    oled_.setFont(u8g2_font_5x7_tf);
+    const int text_w = oled_.getStrWidth(banner);
+    const int frame_w = text_w + 6;
+    const int available_left = x + kBannerLeft;
+    const int available_right = x + kBannerRight;
+    if (available_right - available_left >= frame_w) {
+      const int frame_x =
+          available_left + (available_right - available_left - frame_w) / 2;
+      oled_.drawRFrame(frame_x, y + 1, frame_w, 10, 2);
+      oled_.drawStr(frame_x + 3, y + 8, banner);
+    }
+  }
+
+  // The warning triangle has a permanent home immediately left of ambient.
+  // It no longer shifts or competes with LOCKOUT / GET-HOME banners.
+  if (model.fault_count > 0 && millis() % 2000UL < 650UL) {
+    draw_warning_triangle(x + kWarningTriangleX, y + 1);
+  }
 
   const uint8_t left_role = model.settings->fridge_on_left ? 0 : 1;
   const uint8_t right_role = model.settings->fridge_on_left ? 1 : 0;
   const char* role_labels[] = {"FRDG", "FRZ"};
 
   oled_.setFont(u8g2_font_6x10_tf);
-  oled_.drawStr(x + 2, y + 19, role_labels[left_role]);
-  oled_.drawStr(x + 66, y + 19, role_labels[right_role]);
+  oled_.drawStr(x + 2, y + 23, role_labels[left_role]);
+  oled_.drawStr(x + 66, y + 23, role_labels[right_role]);
 
   const uint8_t* hero_font = u8g2_font_logisoso20_tf;
   constexpr int kHeroColumnWidth = 61;
@@ -243,24 +293,24 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
       break;
     }
   }
-  draw_hero_temperature(x + 2, y + 46, model.role_temp_c[left_role],
+  draw_hero_temperature(x + 2, y + 49, model.role_temp_c[left_role],
                         model.fahrenheit, hero_font);
-  draw_hero_temperature(x + 66, y + 46, model.role_temp_c[right_role],
+  draw_hero_temperature(x + 66, y + 49, model.role_temp_c[right_role],
                         model.fahrenheit, hero_font);
 
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
   oled_.drawStr(x + 2, y + 62, "SPILL");
   if (model.control->spillover) {
-    draw_fan(x + 34, y + 57, fan_phase);
+    draw_fan(x + 37, y + 57, fan_phase);
   } else {
-    oled_.drawStr(x + 31, y + 62, "-");
+    oled_.drawStr(x + 34, y + 62, "-");
   }
   oled_.drawStr(x + 68, y + 62, "CIRC");
   if (model.control->circulation) {
-    draw_fan(x + 96, y + 57, fan_phase);
+    draw_fan(x + 99, y + 57, fan_phase);
   } else {
-    oled_.drawStr(x + 93, y + 62, "-");
+    oled_.drawStr(x + 96, y + 62, "-");
   }
 }
 
@@ -376,6 +426,9 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
                            "Assign ambient"};
     t.name = roles[model.selected_setting - kFirstAssignmentSetting];
     t.value[0] = '\0';
+  } else if (model.selected_setting == kAboutSetting) {
+    t.name = "About";
+    snprintf(t.value, sizeof(t.value), "Press to open");
   }
   return t;
 }
@@ -398,6 +451,21 @@ void FridgeDisplay::draw_menu(int x, int y, const DisplayModel& model) {
   oled_.drawFrame(x, y + 50, 124, 4);
   const int fill = (124 * (model.selected_setting + 1)) / kSettingCount;
   oled_.drawBox(x, y + 50, fill, 4);
+}
+
+void FridgeDisplay::draw_about(int x, int y) {
+  oled_.setFont(u8g2_font_6x10_tf);
+  oled_.drawStr(x + 2, y + 10, "ABOUT");
+
+  char line[24];
+  snprintf(line, sizeof(line), "Firmware %s", hw::kFirmwareVersion);
+  oled_.drawStr(x + 2, y + 25, line);
+  snprintf(line, sizeof(line), "Built %s", __DATE__);
+  oled_.drawStr(x + 2, y + 38, line);
+
+  oled_.setFont(u8g2_font_5x7_tf);
+  oled_.drawStr(x + 2, y + 51, "(c) Marc Archambault");
+  oled_.drawStr(x + 2, y + 62, "Press to return");
 }
 
 void FridgeDisplay::draw_errors(int x, int y, const DisplayModel& model) {
@@ -440,17 +508,14 @@ void FridgeDisplay::draw(const DisplayModel& model) {
     draw_errors(x, y, model);
   } else if (model.alarm_active) {
     draw_alarm(model);
+  } else if (model.menu_active && model.menu_editing &&
+             model.selected_setting == kAboutSetting) {
+    draw_about(x, y);
   } else if (model.menu_active) {
     draw_menu(x, y, model);
   } else {
     draw_home(x, y, model);
   }
 
-  const bool showing_home = !model.assignment_mode && !showing_errors &&
-      !model.alarm_active && !model.menu_active;
-  if (showing_home && model.fault_count > 0 &&
-      millis() % 2000UL < 650UL) {
-    draw_warning_triangle(x + 20, y + 1);
-  }
   oled_.sendBuffer();
 }

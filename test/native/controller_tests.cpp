@@ -17,6 +17,10 @@ void check(bool condition, const char* description) {
   }
 }
 
+uint32_t after(uint32_t start, uint32_t elapsed_ms) {
+  return start + elapsed_ms;  // intentional uint32_t rollover
+}
+
 void test_missing_freezer_is_optional() {
   ControllerSettings settings;
   settings.fan_delay_s = 5;
@@ -180,6 +184,62 @@ void test_changing_emergency_setting_restarts_on_phase() {
         "changing the selected duty cycle starts a fresh on phase");
 }
 
+void test_fan_delay_survives_millis_rollover() {
+  ControllerSettings settings;
+  settings.fan_delay_s = 5;
+  FridgeController controller;
+  const uint32_t start = 0xFFFFFF00U;
+
+  g_fake_millis = start;
+  check(!controller.update(8.0f, -10.0f, settings, true).spillover,
+        "rollover test starts fan qualification");
+  g_fake_millis = after(start, 4999U);
+  check(!controller.update(8.0f, -10.0f, settings, true).spillover,
+        "fan delay remains active across millis rollover");
+  g_fake_millis = after(start, 5000U);
+  check(controller.update(8.0f, -10.0f, settings, true).spillover,
+        "fan delay expires correctly across millis rollover");
+}
+
+void test_minimum_runtime_survives_millis_rollover() {
+  ControllerSettings settings;
+  settings.fan_delay_s = 5;
+  settings.spillover_min_on_min = 1;
+  FridgeController controller;
+  const uint32_t start = 0xFFFFF000U;
+
+  g_fake_millis = start;
+  controller.update(8.0f, -10.0f, settings, true);
+  g_fake_millis = after(start, 5000U);
+  check(controller.update(8.0f, -10.0f, settings, true).spillover,
+        "spillover starts across millis rollover");
+  g_fake_millis = after(start, 5000U + 59999U);
+  check(controller.update(2.0f, -10.0f, settings, true).spillover,
+        "minimum runtime remains active across rollover");
+  g_fake_millis = after(start, 5000U + 60000U);
+  check(!controller.update(2.0f, -10.0f, settings, true).spillover,
+        "minimum runtime expires correctly across rollover");
+}
+
+void test_emergency_cycle_survives_millis_rollover() {
+  ControllerSettings settings;
+  settings.emergency_spillover_on_min = 5;
+  EmergencySpilloverController emergency;
+  const uint32_t start = 0xFFFF0000U;
+
+  check(emergency.update(start, true, false, NAN, settings),
+        "get-me-home starts before rollover");
+  check(emergency.update(after(start, 5U * 60U * 1000U - 1U), true, false,
+                         NAN, settings),
+        "get-me-home ON interval survives rollover");
+  check(!emergency.update(after(start, 5U * 60U * 1000U), true, false, NAN,
+                          settings),
+        "get-me-home turns off correctly after rollover");
+  check(emergency.update(after(start, 60U * 60U * 1000U), true, false, NAN,
+                         settings),
+        "get-me-home next-hour phase survives rollover");
+}
+
 void test_settings_normalization_enforces_numeric_bounds() {
   ControllerSettings settings;
   settings.high_c = -100.0f;
@@ -264,6 +324,9 @@ int main() {
   test_emergency_hourly_duty_cycle();
   test_emergency_respects_only_a_valid_lockout();
   test_changing_emergency_setting_restarts_on_phase();
+  test_fan_delay_survives_millis_rollover();
+  test_minimum_runtime_survives_millis_rollover();
+  test_emergency_cycle_survives_millis_rollover();
   test_settings_normalization_enforces_numeric_bounds();
   test_settings_normalization_enforces_enums_and_finite_values();
   test_settings_normalization_enforces_control_band();

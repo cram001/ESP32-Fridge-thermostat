@@ -21,13 +21,6 @@ constexpr uint8_t kEncoderAddress = 0x54;  // SEN0502 DIP switches both OFF
 // enough count headroom for reliable input.
 constexpr uint8_t kEncoderNavigationGain = 1;
 constexpr uint16_t kEncoderNeutralValue = 32;
-// Numeric editing mode uses DFRobot's maximum gain so each physical detent
-// corresponds to roughly one visible LED step. Gauge endpoints deliberately
-// retain one LED of headroom at either end so the encoder can still move both
-// directions when a setting is at its minimum or maximum.
-constexpr uint8_t kEncoderGaugeGain = 51;
-constexpr uint16_t kEncoderGaugeMinValue = 51;
-constexpr uint16_t kEncoderGaugeMaxValue = 969;
 
 constexpr uint32_t kSignalKFaultGraceMs = 60UL * 1000UL;
 constexpr uint32_t kStartupAlarmGraceMs = 2UL * 60UL * 60UL * 1000UL;
@@ -55,20 +48,38 @@ constexpr uint16_t kBuzzerLowFrequencyHz = 1800;
 
 constexpr uint32_t kTemperaturePeriodMs = 5UL * 1000UL;
 constexpr uint8_t kTemperatureFilterSamples = 6;
+// DS18B20 temperature register power-on/reset value. In this refrigeration
+// application +85 C is not a plausible compartment reading, so treat it as an
+// invalid sensor state rather than accepting a reset scratchpad value.
+constexpr float kDs18b20PowerOnResetC = 85.0f;
+// Re-discover OneWire devices periodically. Two consecutive matching scans are
+// required before the active list changes, rejecting one-off bus noise while
+// still recovering automatically from replacements/reconnections.
+constexpr uint32_t kSensorRescanIntervalMs = 5UL * 1000UL;
+constexpr uint8_t kSensorDiscoveryConfirmations = 2;
+// Sensor input is considered healthy only while recent CRC-valid samples keep
+// arriving. Two transient failures are tolerated; the third failed 5-second
+// sample, or 15 seconds without a good sample, marks the role read-failed.
+constexpr uint8_t kSensorReadFailureLimit = 3;
+constexpr uint32_t kSensorFreshnessTimeoutMs = 15UL * 1000UL;
+
 constexpr uint32_t kControlPeriodMs = 250;
 constexpr uint32_t kDisplayPeriodMs = 250;
-constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderButtonGuardMs = 750;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
 // A lightweight I2C presence probe runs on this cadence so a dropped or
 // reconnected encoder is detected during normal operation, not only at boot.
 constexpr uint32_t kEncoderHealthCheckIntervalMs = 5UL * 1000UL;
 constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
-// This SEN0502 reports one clockwise count per detent, but two
-// counterclockwise transitions: one between detents and one at the detent.
+// This SEN0502 reports two counterclockwise transitions per detent on this
+// hardware; collapse those two transitions to one menu/edit step.
 constexpr int32_t kEncoderCounterclockwiseCountsPerDetent = 2;
 constexpr uint32_t kPixelShiftPeriodMs = 5500;
 constexpr uint32_t kSplashDurationMs = 15UL * 1000UL;
+// Task watchdog protects an unattended controller from a wedged loop or
+// peripheral/library call. Normal loop work completes in far less than this.
+constexpr uint32_t kTaskWatchdogTimeoutS = 15;
+
 // User-editable temperature ranges and increments.
 constexpr float kTemperatureEditStepC = 0.1f;
 constexpr float kFridgeControlMinC = -10.0f;
@@ -96,6 +107,6 @@ constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
 constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.11.0";
+constexpr char kFirmwareVersion[] = "v0.13.1";
 
 }  // namespace hw
