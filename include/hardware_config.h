@@ -114,6 +114,6 @@ constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
 constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.12.2";
+constexpr char kFirmwareVersion[] = "v0.12.3";
 
 }  // namespace hw
