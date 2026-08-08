@@ -23,7 +23,7 @@ For unattended fault behavior and the native sensor/fan/compressor simulations, 
 
 Sensor roles are never assigned automatically by OneWire bus order. They follow the saved 64-bit ROM, so reconnecting wiring cannot exchange fridge and freezer roles. The controller performs a direct OneWire ROM search every five seconds and requires two matching scans before accepting a changed device list. A replacement or reconnected DS18B20 is therefore normally detected within about 5–10 seconds without rebooting. Use the appropriate `Assign ...` item to bind a replacement ROM to a role. Saving the new selection overwrites the old ROM for that role. If that physical sensor was assigned elsewhere, the old duplicate assignment is cleared automatically.
 
-The firmware version shown on the startup screen is the authoritative way to confirm which build is running. `v1.0.0` remains reserved for the first stable release; development builds may increment minor or patch versions as behavior changes.
+The firmware version shown on the startup screen is the authoritative way to confirm which build is running. The final `About` menu item also shows the firmware version, compile/build date, and author/copyright information. `v1.0.0` remains reserved for the first stable release; development builds may increment minor or patch versions as behavior changes.
 
 The freezer probe is optional for control. If it is missing, the fridge probe continues to control the spillover fan. If the freezer probe is present and its valid temperature is at or above the configured lockout, the spillover fan remains off. This avoids deliberately adding more heat load to a freezer that is already recovering or unable to maintain temperature.
 
