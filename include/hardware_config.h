@@ -60,6 +60,9 @@ constexpr uint32_t kDisplayPeriodMs = 250;
 constexpr uint32_t kSettingsSaveDelayMs = 2UL * 1000UL;
 constexpr uint32_t kEncoderButtonGuardMs = 750;
 constexpr uint32_t kEncoderRecoveryQuietMs = 2UL * 1000UL;
+// A lightweight I2C presence probe runs on this cadence so a dropped or
+// reconnected encoder is detected during normal operation, not only at boot.
+constexpr uint32_t kEncoderHealthCheckIntervalMs = 5UL * 1000UL;
 constexpr int32_t kEncoderMaxDeltaPerPoll = 255;
 // This SEN0502 reports one clockwise count per detent, but two
 // counterclockwise transitions: one between detents and one at the detent.
