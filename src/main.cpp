@@ -52,6 +52,10 @@ uint32_t last_encoder_health_check_ms = 0;
 uint8_t selected_setting = 0;
 bool menu_editing = false;
 bool edit_changed = false;
+ControllerSettings edit_original_settings;
+float edit_original_calibration_c[3] = {0.0f, 0.0f, 0.0f};
+bool edit_original_fahrenheit = false;
+bool edit_snapshot_valid = false;
 
 bool alarm_active = false;
 bool alarm_acknowledged = false;
@@ -192,6 +196,9 @@ void mark_settings_dirty() {
 }
 
 void save_settings_when_idle() {
+  // Rotary edits are transactional: never persist a value until the user
+  // explicitly presses the encoder to finish the edit.
+  if (menu_editing) return;
   if (settings_dirty &&
       millis() - settings_changed_ms >= hw::kSettingsSaveDelayMs) {
     save_settings();
@@ -203,6 +210,44 @@ void show_saved_message(uint32_t now) {
   display_awake = true;
   last_display_activity_ms = now;
   display.set_enabled(true);
+}
+
+void capture_edit_snapshot() {
+  edit_original_settings = settings;
+  edit_original_fahrenheit = display_fahrenheit;
+  for (uint8_t role = 0; role < 3; ++role) {
+    edit_original_calibration_c[role] = calibration_c[role];
+  }
+  edit_snapshot_valid = true;
+}
+
+void discard_edit_snapshot() {
+  edit_snapshot_valid = false;
+  edit_changed = false;
+}
+
+void rollback_edit() {
+  if (!edit_snapshot_valid) {
+    edit_changed = false;
+    return;
+  }
+
+  settings = edit_original_settings;
+  display_fahrenheit = edit_original_fahrenheit;
+  for (uint8_t role = 0; role < 3; ++role) {
+    calibration_c[role] = edit_original_calibration_c[role];
+  }
+  NormalizeControllerSettings(settings);
+
+  // Some settings have immediate UI side effects while they are previewed.
+  display.set_contrast(settings.oled_contrast_percent);
+  applied_oled_contrast_percent = settings.oled_contrast_percent;
+  buzzer.stop();
+
+  // No partial rotary edit should be written later by the deferred-save path.
+  settings_dirty = false;
+  edit_snapshot_valid = false;
+  edit_changed = false;
 }
 
 void read_temperatures() {
@@ -440,6 +485,7 @@ void check_encoder_health(uint32_t now) {
       encoder.detectButtonDown();  // Clear any stale button edge.
     }
   } else {
+    if (menu_editing) rollback_edit();
     encoder_available = false;
     encoder_input_locked = false;
     encoder_quiet_started_ms = 0;
@@ -553,6 +599,7 @@ void update_encoder() {
 
   if (alarm_visual_active) {
     if (button_down) {
+      if (menu_editing) rollback_edit();
       alarm_acknowledged = true;
       alarm_visual_active = false;
       menu_editing = false;
@@ -639,10 +686,7 @@ void update_encoder() {
   if (!menu_active) {
     last_menu_activity_ms = 0;
     if (menu_editing || encoder_gain != hw::kEncoderNavigationGain) {
-      if (edit_changed) {
-        save_settings();
-        show_saved_message(now);
-      }
+      if (menu_editing) rollback_edit();
       menu_editing = false;
       edit_changed = false;
       set_encoder_navigation_mode();
@@ -683,6 +727,9 @@ void update_encoder() {
         }
         set_encoder_navigation_mode();
       } else {
+        // Active-errors browsing is not a persisted setting. All other edit
+        // screens take a complete snapshot before any rotary change is made.
+        if (selected_setting != 14) capture_edit_snapshot();
         menu_editing = true;
         edit_changed = false;
         if (setting_supports_encoder_gauge(selected_setting)) {
@@ -824,7 +871,6 @@ void update_encoder() {
 
     if (setting_changed) {
       NormalizeControllerSettings(settings);
-      mark_settings_dirty();
       edit_changed = true;
       if (setting_supports_encoder_gauge(selected_setting)) {
         set_encoder_gauge_mode();
@@ -833,9 +879,12 @@ void update_encoder() {
   }
 
   if (button_down) {
-    if (edit_changed) {
+    if (selected_setting != 14) {
+      // Press is the transaction boundary: the current previewed value becomes
+      // persistent only here, followed by explicit visual confirmation.
       save_settings();
       show_saved_message(now);
+      discard_edit_snapshot();
     }
     menu_editing = false;
     edit_changed = false;
