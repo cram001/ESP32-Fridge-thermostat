@@ -21,3 +21,4 @@ compile_and_run() {
 
 compile_and_run controller_tests.cpp controller-tests
 compile_and_run failure_mode_tests.cpp failure-mode-tests
+compile_and_run encoder_filter_tests.cpp encoder-filter-tests
