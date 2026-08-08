@@ -92,8 +92,7 @@ constexpr uint8_t kEmergencySpilloverOptionCount = 6;
 constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
 constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 
-// v1.0.0 is reserved for the first stable release. Patch releases identify
-// post-PR fixes so the startup screen can distinguish the exact test build.
-constexpr char kFirmwareVersion[] = "v0.10.1";
+// v1.0.0 is reserved for the first stable release.
+constexpr char kFirmwareVersion[] = "v0.11.0";
 
 }  // namespace hw
