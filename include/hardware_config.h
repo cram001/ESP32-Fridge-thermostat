@@ -55,6 +55,10 @@ constexpr uint16_t kBuzzerLowFrequencyHz = 1800;
 
 constexpr uint32_t kTemperaturePeriodMs = 5UL * 1000UL;
 constexpr uint8_t kTemperatureFilterSamples = 6;
+// DS18B20 temperature register power-on/reset value. In this refrigeration
+// application +85 C is not a plausible compartment reading, so treat it as an
+// invalid sensor state rather than accepting a reset scratchpad value.
+constexpr float kDs18b20PowerOnResetC = 85.0f;
 // Re-discover OneWire devices periodically. Two consecutive matching scans are
 // required before the active list changes, rejecting one-off bus noise while
 // still recovering automatically from replacements/reconnections.
@@ -110,6 +114,6 @@ constexpr uint8_t kDisplayTimeoutOptions[] = {0, 1, 5, 10, 15, 20, 30, 60};
 constexpr uint8_t kDisplayTimeoutOptionCount = 8;
 
 // v1.0.0 is reserved for the first stable release.
-constexpr char kFirmwareVersion[] = "v0.12.0";
+constexpr char kFirmwareVersion[] = "v0.12.1";
 
 }  // namespace hw
