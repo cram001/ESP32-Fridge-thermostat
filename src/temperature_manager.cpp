@@ -105,10 +105,18 @@ bool TemperatureManager::scan_sensors(uint32_t now, bool force) {
 
   DeviceAddress found[kMaxSensors] = {};
   uint8_t found_count = 0;
-  const uint8_t reported_count =
-      min<uint8_t>(bus_.getDeviceCount(), kMaxSensors);
-  for (uint8_t i = 0; i < reported_count && found_count < kMaxSensors; ++i) {
-    if (bus_.getAddress(found[found_count], i)) found_count++;
+
+  // Do not use DallasTemperature::getDeviceCount() here. That value is cached
+  // when DallasTemperature::begin() runs, so it cannot discover a probe that
+  // was absent at boot or connected later. getAddress() performs a real
+  // OneWire search each time, so walking indexes until it fails provides the
+  // runtime rediscovery required by this unattended controller without heap
+  // allocation or reinitializing the temperature subsystem.
+  for (uint8_t index = 0; index < kMaxSensors; ++index) {
+    DeviceAddress address;
+    if (!bus_.getAddress(address, index)) break;
+    copy_rom(found[found_count], address);
+    found_count++;
   }
 
   // Stable ordering keeps detectedProbeN paths from shuffling when the OneWire
