@@ -301,17 +301,23 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
 
-  // Keep each fan status under the compartment it serves. The spillover fan
-  // belongs with FRDG and the circulation fan with FRZ, so their complete
-  // label/state groups follow the same left/right layout swap as the
-  // temperatures above.
+  // Keep each fan status under the compartment it serves. Position the symbol
+  // from the rendered label width so SPILL and CIRC retain the same visual gap
+  // on either side of the display.
+  constexpr int kFanTextGapPx = 3;
+  constexpr int kFanRadiusPx = 4;
   const bool spill_left = model.settings->fridge_on_left;
   const int spill_label_x = spill_left ? x + 2 : x + 68;
-  const int spill_fan_x = spill_left ? x + 37 : x + 99;
-  const int spill_off_x = spill_left ? x + 34 : x + 96;
   const int circ_label_x = spill_left ? x + 68 : x + 2;
-  const int circ_fan_x = spill_left ? x + 99 : x + 37;
-  const int circ_off_x = spill_left ? x + 96 : x + 34;
+  const int spill_label_w = oled_.getStrWidth("SPILL");
+  const int circ_label_w = oled_.getStrWidth("CIRC");
+  const int spill_fan_x =
+      spill_label_x + spill_label_w + kFanTextGapPx + kFanRadiusPx;
+  const int circ_fan_x =
+      circ_label_x + circ_label_w + kFanTextGapPx + kFanRadiusPx;
+  const int dash_w = oled_.getStrWidth("-");
+  const int spill_off_x = spill_fan_x - dash_w / 2;
+  const int circ_off_x = circ_fan_x - dash_w / 2;
 
   oled_.drawStr(spill_label_x, y + 62, "SPILL");
   if (model.control->spillover) {
