@@ -33,17 +33,9 @@ class EncoderDeltaFilter {
   int32_t decode(int32_t position) {
     if (!initialized_) return 0;
 
-    if (gain_ <= 1) {
-      if (rebaseline_pending_) {
-        if (position == static_cast<int32_t>(previous_baseline_)) return 0;
-        rebaseline_pending_ = false;
-      }
-      return position - static_cast<int32_t>(baseline_);
-    }
-
     if (rebaseline_pending_) {
       if (position == static_cast<int32_t>(previous_baseline_)) {
-        // Exact stale readback from before the LED-gauge reposition.
+        // Exact stale readback from before the firmware reposition.
         return 0;
       }
       if (position == static_cast<int32_t>(baseline_)) {
@@ -51,27 +43,37 @@ class EncoderDeltaFilter {
         return 0;
       }
 
-      // A user may rotate before the reprogrammed baseline has been observed.
-      // Accept only complete gain-sized movements from either the old or the
-      // new baseline; ambiguous residuals are discarded.
       const int32_t from_previous =
           position - static_cast<int32_t>(previous_baseline_);
+      const int32_t from_current =
+          position - static_cast<int32_t>(baseline_);
+
+      if (gain_ <= 1) {
+        // During a navigation-mode rebaseline, choose the nearer reference.
+        // This preserves a genuine turn that occurs before the new baseline is
+        // observed while rejecting a large stale jump from the other mode.
+        rebaseline_pending_ = false;
+        return std::abs(from_previous) <= std::abs(from_current)
+                   ? from_previous
+                   : from_current;
+      }
+
+      // A user may rotate before the reprogrammed gauge baseline has been
+      // observed. Accept only complete gain-sized movements from either the
+      // old or new baseline; ambiguous residuals are discarded.
       if (is_complete_step(from_previous)) {
         rebaseline_pending_ = false;
         return from_previous / static_cast<int32_t>(gain_);
       }
-
-      const int32_t from_current =
-          position - static_cast<int32_t>(baseline_);
       if (is_complete_step(from_current)) {
         rebaseline_pending_ = false;
         return from_current / static_cast<int32_t>(gain_);
       }
-
       return 0;
     }
 
     const int32_t delta = position - static_cast<int32_t>(baseline_);
+    if (gain_ <= 1) return delta;
     if (!is_complete_step(delta)) return 0;
     return delta / static_cast<int32_t>(gain_);
   }
