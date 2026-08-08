@@ -1,0 +1,30 @@
+name: Apply About menu patch
+
+on:
+  push:
+    paths:
+      - tools/apply_about_menu.py
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v0.11.1-transactional-edit-status-banners
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply patch
+        run: python3 tools/apply_about_menu.py
+      - name: Commit patch and cleanup helpers
+        run: |
+          rm -f tools/apply_about_menu.py .github/workflows/apply-about-menu.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add About menu and align fan off indicators"
+          git push origin HEAD:agent/v0.11.1-transactional-edit-status-banners
