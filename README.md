@@ -21,7 +21,7 @@ For unattended fault behavior and the native sensor/fan/compressor simulations, 
 5. Assign each sensor explicitly. Warm one probe by hand and identify its live temperature under `environment.inside.refrigerator.detectedProbeN` in the Signal K data browser, or on the OLED assignment screen. On the OLED, choose `Assign fridge`, `Assign freezer`, or `Assign ambient`, rotate to the matching probe, and press to save its ROM.
 6. Press the rotary button from the home screen to open settings at item 1. Rotate in either direction to browse, press to edit, rotate to preview a new value, and press again to commit it. A committed change briefly shows `SAVED`.
 
-Sensor roles are never assigned automatically by OneWire bus order. They follow the saved 64-bit ROM, so reconnecting wiring cannot exchange fridge and freezer roles. The OneWire bus is rescanned periodically; a replacement or reconnected sensor is detected automatically after the new device list is seen consistently. Use the appropriate `Assign ...` item to bind a replacement ROM to a role. Saving the new selection overwrites the old ROM for that role. If that physical sensor was assigned elsewhere, the old duplicate assignment is cleared automatically.
+Sensor roles are never assigned automatically by OneWire bus order. They follow the saved 64-bit ROM, so reconnecting wiring cannot exchange fridge and freezer roles. The controller performs a direct OneWire ROM search every five seconds and requires two matching scans before accepting a changed device list. A replacement or reconnected DS18B20 is therefore normally detected within about 5–10 seconds without rebooting. Use the appropriate `Assign ...` item to bind a replacement ROM to a role. Saving the new selection overwrites the old ROM for that role. If that physical sensor was assigned elsewhere, the old duplicate assignment is cleared automatically.
 
 The firmware version shown on the startup screen is the authoritative way to confirm which build is running. `v1.0.0` remains reserved for the first stable release; development builds may increment minor or patch versions as behavior changes.
 
@@ -31,20 +31,24 @@ The home-screen top row has fixed regions for Signal K status, a `LOCKOUT` / `GE
 
 ## Fridge temperature control
 
-The displayed fridge, freezer, and ambient temperatures are rolling averages of six readings sampled about every five seconds. Normal fan control uses the filtered fridge temperature. Freezer lockout uses the latest valid freezer reading so it can stop spillover without waiting for the average.
+The displayed fridge, freezer, and ambient temperatures are rolling averages of six good readings sampled about every five seconds. Normal fan control uses the filtered fridge temperature. Freezer lockout uses the latest valid freezer reading so it can stop spillover without waiting for the average.
 
 - At `Fridge max T`, a persistent warm condition starts spillover after the fan trigger delay. Circulation starts with it.
 - At `Fridge min T`, spillover stops only after its configured minimum runtime has elapsed. Reaching the freezer lockout is the temperature exception and stops spillover immediately.
 - At or below `Fridge min T`, circulation can also start independently after the fan trigger delay. Its own minimum runtime is enforced once it starts.
 - `Fridge min T` must remain at least 0.5 C below `Fridge max T`.
 
+## DS18B20 input reliability
+
+Sensor validity is based on communication integrity and freshness, not on whether the temperature number changes. Discovery validates the sensor ROM CRC and DS18B20 family. DallasTemperature validates the scratchpad CRC on each temperature read. The firmware rejects disconnected/failed reads and the DS18B20 +85 C power-on/reset value.
+
+Two transient failed five-second reads are tolerated using the most recent known-good value. A third failed read, or about 15 seconds without a good sample, marks that assigned role as read-failed and removes it from control. One later good sample recovers the role automatically. A cabin, refrigerator, or freezer may legitimately remain on exactly the same 10-bit reading for hours; an unchanged numeric value is not treated as a fault.
+
 ## Fridge-probe failure / get-me-home mode
 
-A missing or invalid fridge probe raises a persistent alarm and disables normal thermostat control. The spillover fan remains OFF by default. The user may select an explicit get-me-home duty cycle of 5, 10, 20, 30, or 40 minutes ON per hour. Changing the setting starts a new ON interval immediately. Select OFF when the temporary mode is no longer required.
+A missing, read-failed, or invalid fridge probe raises a persistent alarm and disables normal thermostat control. The spillover fan remains OFF by default. The user may select an explicit get-me-home duty cycle of 5, 10, 20, 30, or 40 minutes ON per hour. Changing the setting starts a new ON interval immediately. Select OFF when the temporary mode is no longer required.
 
 Pressing the encoder acknowledges an active alarm. This stops the buzzer and full-screen visual alert, but the alarm remains active in Signal K until its underlying condition clears.
-
-A valid probe that remains on exactly the same DS18B20 measurement step for approximately 30 minutes raises an advisory `temp not changing` error. This does not disable control by itself; it tells the user to investigate a potentially frozen sensor/data path.
 
 ## Development checks
 
@@ -54,7 +58,7 @@ Run the host-side controller tests and unattended failure-mode simulations witho
 ./tools/run-native-tests.sh
 ```
 
-The same test command runs automatically in GitHub Actions for pushes and pull requests.
+The same test command runs automatically in GitHub Actions for pushes and pull requests. The suite includes controller timing/rollover tests, failure-mode simulations, and sensor freshness/recovery tests.
 
 ## Hardware
 
