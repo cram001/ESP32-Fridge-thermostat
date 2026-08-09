@@ -88,6 +88,8 @@ Create one path each for:
 
 ## 4. Create the MQTT input nodes
 
+Note: a .json file exists in the Node-Red folder. This can be imported directly into a Node-Red flow (aka tab), or you can follow the directions below. Click publish after modifying a flow in Node-Red.
+
 Use the Cerbo's local MQTT broker from Node-RED. A Node-RED flow running on the Cerbo can normally use the local broker rather than routing back out through the LAN.
 
 Subscribe to:
