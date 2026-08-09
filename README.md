@@ -1,6 +1,6 @@
 # ESP32 Marine Spillover Fridge Controller
 
-A standalone ESP32 thermostat/controller for a two-fan marine spillover refrigerator, with local OLED/rotary control and optional Signal K integration.
+A standalone ESP32 thermostat/controller for a two-fan marine spillover refrigerator, with local OLED/rotary control plus optional Signal K and direct Victron Cerbo GX integration.
 
 The controller is designed to run unattended 24/7 for long periods. It monitors refrigerator, freezer, and ambient temperatures; controls the spillover and circulation fans; provides alarms and a sensor-failure fallback mode; and automatically recovers from supported sensor and encoder disconnect/reconnect events without requiring a reboot.
 
@@ -8,7 +8,7 @@ The controller is designed to run unattended 24/7 for long periods. It monitors 
 
 > `v1.0.0` is reserved for the first stable release.
 
-For the complete operating and menu reference, see [Device setup and menu guide](docs/USER_GUIDE.md). For fault behavior and simulation coverage, see [Failure-mode analysis and simulation](docs/FAILURE_MODE_ANALYSIS.md).
+For the complete operating and menu reference, see [Device setup and menu guide](docs/USER_GUIDE.md). For Cerbo GX / MQTT / Node-RED commissioning, see [Cerbo GX MQTT integration](docs/CERBO_MQTT.md). For fault behavior and simulation coverage, see [Failure-mode analysis and simulation](docs/FAILURE_MODE_ANALYSIS.md).
 
 ---
 
@@ -29,32 +29,20 @@ For the complete operating and menu reference, see [Device setup and menu guide]
 
 ### Temperature sensors
 
-- Up to three DS18B20 roles:
-  - Refrigerator
-  - Freezer
-  - Ambient/cabin
+- Up to three DS18B20 roles: Refrigerator, Freezer, Ambient/cabin.
 - Sensors are assigned by their unique 64-bit ROM address, **not by OneWire bus order**.
 - Refrigerator probe is required for automatic thermostat operation.
-- Freezer probe is optional; automatic refrigerator control continues without it, but freezer lockout is unavailable.
+- Freezer probe is optional; refrigerator control continues without it, but freezer lockout is unavailable.
 - Ambient probe is optional.
 - Direct OneWire ROM rediscovery every 5 seconds.
 - New/reconnected sensors normally appear within approximately 5–10 seconds without rebooting.
-- Sensor validity checks include ROM CRC, scratchpad validity, failed/disconnected reads, freshness, and rejection of the DS18B20 `+85 C` power-on/reset value.
+- Sensor validity checks include ROM CRC, failed/disconnected reads, freshness, and rejection of the DS18B20 `+85 C` power-on/reset value.
 - A sensor is declared failed after three consecutive failed 5-second reads or approximately 15 seconds without a valid sample.
 - A single later valid sample automatically restores that sensor role.
 
 ### GET-HOME fallback mode
 
-If the refrigerator probe fails, normal thermostat control is disabled and the spillover fan defaults OFF.
-
-The user can manually select a temporary spillover duty cycle of:
-
-- OFF
-- 5 minutes/hour
-- 10 minutes/hour
-- 20 minutes/hour
-- 30 minutes/hour
-- 40 minutes/hour
+If the refrigerator probe fails, normal thermostat control is disabled and the spillover fan defaults OFF. The user can manually select a temporary spillover duty cycle of OFF, 5, 10, 20, 30, or 40 minutes/hour.
 
 When the refrigerator sensor becomes healthy again, **GET-HOME automatically exits and normal automatic thermostat control resumes**.
 
@@ -62,47 +50,63 @@ When the refrigerator sensor becomes healthy again, **GET-HOME automatically exi
 
 - 2.42-inch 128x64 SSD1309 SPI OLED.
 - DFRobot SEN0502 I2C rotary encoder with pushbutton.
-- 23-item local settings/service menu.
+- **24-item** local settings/service menu.
 - Transactional editing: changes are previewed in RAM and only committed when the encoder is pressed again.
 - Timed-out, interrupted, or aborted edits restore the previous value instead of saving partial changes.
 - `SAVED` confirmation after committed changes.
-- User-selectable display layout:
-  - `FRDG | FRZ`
-  - `FRZ | FRDG`
-- Fan indications follow the physical compartment layout:
-  - **CIRC** is grouped with **FRDG**.
-  - **SPILL** is grouped with **FRZ**.
+- User-selectable display layout: `FRDG | FRZ` or `FRZ | FRDG`.
+- Fan indications follow the physical compartment layout: **CIRC** with **FRDG**, **SPILL** with **FRZ**.
 - Animated fan symbols indicate active outputs.
 - Configurable OLED contrast and display timeout.
 - Pixel shifting reduces OLED burn-in risk.
 - `About` screen shows firmware version and build date.
+- Top status row independently shows Signal K and Cerbo/MQTT connectivity.
 
-### Alarms and service functions
+### Signal K and Victron/Cerbo GX networking
 
-- Configurable high refrigerator alarm.
-- Configurable high freezer alarm.
-- Persistent alarm state until the underlying fault clears.
-- Encoder press acknowledges the audible/full-screen alert without hiding the underlying active fault.
-- Selectable buzzer modes:
-  - OFF
-  - STEADY
-  - DOUBLE
-  - HI-LO
-  - TRIPLE
-- `ACTIVE ERRORS` menu.
-- Five-second output test for:
-  - Spillover fan
-  - Circulation fan
-  - Buzzer
-- The 15-second startup splash also runs both fans as an immediate installation/output check.
+The two integrations are independent. Neither is required for local thermostat operation.
 
-### Signal K / networking
+#### Signal K
 
 - Built on SensESP.
 - Wi-Fi configuration through the SensESP web interface.
 - Publishes temperatures and controller state to Signal K.
-- Signal K is **optional** for local thermostat operation.
-- Signal K data can be used by dashboards, Node-RED, logging systems, and other marine integrations.
+- Signal K can be used by dashboards, Node-RED, logging systems, and other marine integrations.
+
+#### Direct Cerbo GX / VRM integration
+
+The controller can send its three temperatures directly to a Victron Cerbo GX without requiring Signal K:
+
+```text
+ESP32 -> MQTT -> Cerbo GX -> Node-RED -> Victron Virtual Temperature Sensors -> VRM
+```
+
+The ESP32 publishes retained Celsius values on:
+
+- `marinefridge/fridge/temperature`
+- `marinefridge/freezer/temperature`
+- `marinefridge/ambient/temperature`
+
+Cerbo MQTT settings are configured through the SensESP web UI:
+
+- Cerbo GX host/IP
+- MQTT port, default `1883`
+- Optional username
+- Optional password
+- Reporting interval
+
+The OLED menu also provides the reporting interval choices:
+
+- OFF
+- 30 sec
+- 1 min
+- 2 min
+- 5 min
+- 10 min
+
+`OFF` completely disables the Cerbo MQTT connection and removes the MQTT status icon from the home screen. When enabled, the compact broker icon is shown beside the Signal K indicator; a slash through the icon means MQTT is configured but not connected. The ambient-temperature font and right-aligned display position are unchanged.
+
+See [docs/CERBO_MQTT.md](docs/CERBO_MQTT.md) for the complete Cerbo GX and Node-RED commissioning procedure. The Node-RED-specific notes are also available in [Node-Red/README-MQTT.md](Node-Red/README-MQTT.md).
 
 ### Long-uptime reliability
 
@@ -115,6 +119,8 @@ The project is deliberately optimized for unattended embedded operation rather t
 - ESP32 task watchdog protection.
 - Unsigned elapsed-time logic for normal operation through `millis()` rollover.
 - Hot/periodic code paths avoid repeated Arduino `String` allocations where practical.
+- MQTT publish path uses fixed buffers and bounded reconnect backoff instead of a tight reconnect loop.
+- MQTT publishes immediately after a successful reconnect and does not publish invalid/non-finite temperatures.
 - Platform and major library versions are pinned for reproducible builds.
 - Native controller/failure-mode tests plus a full PlatformIO firmware build run in GitHub Actions.
 
@@ -122,16 +128,14 @@ The project is deliberately optimized for unattended embedded operation rather t
 
 ## Hardware requirements
 
-The current firmware targets the following hardware.
-
 ### Controller and interface
 
 | Qty | Hardware | Notes |
 |---:|---|---|
 | 1 | **DFRobot FireBeetle 2 ESP32-E N16R2 (DFR1139)** | 16 MB flash version used for development/testing |
-| 1 | **DFRobot DFR0923 FireBeetle 2 Terminal Block Expansion Board** | Recommended; provides labelled terminals and accepts 7–24 V input |
+| 1 | **DFRobot DFR0923 FireBeetle 2 Terminal Block Expansion Board** | Recommended; labelled terminals, 7–24 V input |
 | 1 | **DFRobot SEN0502 Gravity Visual Rotary Encoder** | I2C, default address `0x54` |
-| 1 | **2.42-inch SSD1309 128x64 OLED** | 4-wire SPI; HiLetgo module used for development |
+| 1 | **2.42-inch SSD1309 128x64 OLED** | 4-wire SPI |
 | 1 | **DFRobot DFR0032 Gravity Digital Buzzer** | 5 V module |
 
 ### Temperature sensing
@@ -148,19 +152,19 @@ The current firmware targets the following hardware.
 | 2 | **Logic-compatible MOSFET/relay fan driver modules** | One for spillover, one for circulation |
 | 2 | **12 V fans** or application-appropriate fans | Size/current depend on installation |
 
-**Do not power the fans directly from ESP32 GPIO pins.** The ESP32 outputs must drive suitable MOSFET/relay modules. Use appropriate flyback/transient protection for inductive loads.
+**Do not power the fans directly from ESP32 GPIO pins.** Use suitable MOSFET/relay modules with appropriate flyback/transient protection.
 
 ### Power
 
 - DFR0923 external input: **7–24 VDC**.
-- In a typical marine installation the controller can therefore be supplied from the vessel's nominal 12 VDC system through the DFR0923 board.
+- In a typical marine installation the controller can be supplied from the vessel's nominal 12 VDC system through the DFR0923 board.
 - Verify polarity, fusing, fan voltage, and fan-driver ratings before connecting vessel power.
 
 ---
 
 ## Wiring reference
 
-These are the current firmware assignments using the **DFR0923 terminal labels**.
+Current firmware assignments using the **DFR0923 terminal labels**:
 
 | Function | DFR0923 terminal / connection |
 |---|---|
@@ -190,108 +194,47 @@ Before energizing a new installation, compare these connections with [`include/h
 
 ### 1. Assemble and wire the hardware
 
-1. Install the FireBeetle 2 ESP32-E on the DFR0923 terminal board.
-2. Connect the OLED, rotary encoder, buzzer, and DS18B20 OneWire bus using the wiring table above.
-3. Install the 4.7 kΩ OneWire pull-up between `D12` and `3V3`.
-4. Connect the spillover and circulation outputs to their external MOSFET/relay drivers.
-5. Connect the fans to the fan drivers and their correctly fused power source.
-6. Confirm the spillover fan physically moves cold air from the freezer toward the refrigerator.
-7. Confirm the circulation fan circulates air in the refrigerator compartment.
-8. Re-check power polarity and output wiring before applying vessel power.
+Install the FireBeetle on the DFR0923 board, connect the OLED/encoder/buzzer/OneWire bus, add the 4.7 kΩ pull-up, and connect the two GPIO outputs to external fan drivers. Verify the spillover fan moves freezer air toward the refrigerator and the circulation fan circulates air inside the refrigerator.
 
 ### 2. Build and upload the firmware
 
-This is a PlatformIO project.
-
-1. Clone/download this repository.
-2. Open the project folder in VS Code with the PlatformIO extension installed.
-3. In PlatformIO, select the environment:
-   - `firebeetle2_esp32e_n16r2`
-4. Run **Build**.
-5. Connect the FireBeetle by USB.
-6. Run **Upload**.
-7. Confirm the OLED splash screen shows the expected firmware version.
-
-The firmware version shown on the OLED is the easiest way to confirm exactly which build is running.
+This is a PlatformIO project. Select environment `firebeetle2_esp32e_n16r2`, build, connect the FireBeetle by USB, and upload. Confirm the expected firmware version on the OLED splash screen.
 
 ### 3. Verify the startup hardware test
 
-At boot the splash screen remains visible for approximately **15 seconds**.
+At boot the splash screen remains visible for approximately **15 seconds** and both fan outputs run. Confirm both physical fans operate correctly before relying on the thermostat.
 
-During that period:
+### 4. Configure Wi-Fi and optional integrations
 
-- Spillover fan output should be ON.
-- Circulation fan output should be ON.
-- The splash screen counts down.
+Use the SensESP web configuration interface to configure Wi-Fi.
 
-Confirm both physical fans operate correctly. When the splash ends, the controller leaves the startup test and enters normal control.
+- Signal K is optional.
+- Cerbo GX MQTT is optional and independent of Signal K.
+- For Cerbo GX MQTT, configure the broker host/IP, port and optional credentials in the **Cerbo GX MQTT** section of the SensESP web UI, then select a non-OFF reporting interval either there or from the OLED menu.
 
-If a fan does not run, correct the wiring/driver problem before relying on the thermostat.
-
-### 4. Configure Wi-Fi and optional Signal K
-
-Use the SensESP web configuration interface to configure Wi-Fi and, if desired, Signal K.
-
-Signal K is not required for local thermostat operation. The OLED, encoder, temperature inputs, alarms, and fan control continue to operate locally if Signal K is unavailable.
+For the complete Cerbo GX setup, including Node-RED and VRM verification, follow [docs/CERBO_MQTT.md](docs/CERBO_MQTT.md).
 
 ### 5. Assign the temperature probes
 
-Sensor roles are **never assigned automatically from OneWire order**.
-
-Using the OLED menu:
-
-1. Press the encoder from the home screen.
-2. Navigate to `Assign fridge`.
-3. Warm the intended refrigerator probe with your hand.
-4. Rotate through the detected probes while watching the live temperature.
-5. Press the encoder on the correct probe to save its ROM address.
-6. Repeat for `Assign freezer` if a freezer probe is installed.
-7. Repeat for `Assign ambient` if an ambient probe is installed.
-
-A replacement sensor can be assigned the same way. Saving the replacement ROM overwrites the old assignment for that role.
+Sensor roles are never assigned automatically from OneWire order. Use `Assign fridge`, `Assign freezer`, and `Assign ambient`; warm the desired probe with your hand, select it by live temperature, and press to save its ROM address.
 
 ### 6. Configure the thermostat
 
-Review these settings before leaving the controller unattended:
-
-- `Fridge max T` — temperature at which spillover cooling is requested.
-- `Fridge min T` — lower control threshold.
-- `Freez T lockout` — freezer temperature above which spillover is blocked.
-- `Fridge alarm`.
-- `Freezer alarm`.
-- `Fan delay`.
-- `Spill min ON`.
-- `Circ min ON`.
-- `Get-me-home fan` — normally leave OFF; used only after refrigerator-probe failure.
-- `Buzzer`.
-- `OLED contrast`.
-- `Display off`.
-- `Display layout`.
+Review `Fridge max T`, `Fridge min T`, `Freez T lockout`, the two high-temperature alarms, fan delay, minimum run times, GET-HOME setting, buzzer, OLED contrast, display timeout, display layout, and Cerbo MQTT reporting interval.
 
 `Fridge min T` must remain at least **0.5 C below** `Fridge max T`.
 
 ### 7. Run the service output test
 
-Before commissioning:
-
-1. Open `Test outputs`.
-2. Test `SPILLOVER`.
-3. Test `CIRCULATION`.
-4. Test `BUZZER`.
-5. Confirm each physical device matches the selected output.
-
-Each test automatically stops after five seconds and can also be stopped early by pressing the encoder.
+Use `Test outputs` to test `SPILLOVER`, `CIRCULATION`, and `BUZZER`. Each test stops automatically after five seconds and can also be stopped early by pressing the encoder.
 
 ### 8. Test the sensor-failure recovery path
 
-For a new installation it is worth validating the fallback before leaving the system unattended:
+Disconnect the refrigerator probe, confirm the fault and GET-HOME behavior, reconnect the bus, and confirm the assigned probes return automatically and normal control resumes.
 
-1. Disconnect the refrigerator temperature probe/OneWire bus.
-2. Confirm the controller eventually reports the refrigerator sensor fault and leaves normal thermostat control.
-3. If desired, select a GET-HOME duty cycle and confirm the fallback fan operation.
-4. Reconnect the temperature sensor bus.
-5. Confirm the assigned probes return automatically.
-6. Confirm GET-HOME clears and automatic thermostat control resumes once the refrigerator probe is healthy.
+### 9. If using Cerbo GX, verify VRM temperatures
+
+After completing the Node-RED setup, verify that Fridge, Freezer, and Cabin Ambient temperatures appear as Victron virtual temperature sensors locally and in VRM. See [docs/CERBO_MQTT.md](docs/CERBO_MQTT.md).
 
 ---
 
@@ -317,12 +260,7 @@ Run the host-side controller tests and failure-mode simulations without ESP32 ha
 ./tools/run-native-tests.sh
 ```
 
-GitHub Actions runs:
-
-- Native controller/failure-mode tests.
-- Full PlatformIO firmware build for `firebeetle2_esp32e_n16r2`.
-
-The test suite includes fan timing, GET-HOME timing, sensor freshness/recovery, failure simulations, and `millis()` rollover coverage.
+GitHub Actions runs native controller/failure-mode tests and a full PlatformIO firmware build for `firebeetle2_esp32e_n16r2`.
 
 ---
 
@@ -340,3 +278,4 @@ https://www.thingiverse.com/thing:7381757
 - Humidity sensing to help track evaporator icing/defrost requirements.
 - Ambient-light sensing for automatic OLED brightness control.
 - Door-open sensing and alarm integration.
+- Optional TLS MQTT mode for installations that require port 8883/security profiles that do not permit plain MQTT.
