@@ -38,15 +38,11 @@ A DHCP reservation or otherwise stable Cerbo LAN address is recommended.
 
 ### Security limitation
 
-The current ESP32 publisher supports:
+The current ESP32 publisher supports configurable host/IP, port, optional username/password, and **plain MQTT/TCP only**. TLS/8883 is **not yet implemented**.
 
-- configurable host/IP
-- configurable port
-- optional username
-- optional password
-- plain MQTT/TCP
+**Use this integration only on a trusted vessel/local network or trusted VLAN.** MQTT usernames/passwords and published temperature data are not encrypted and may be visible to devices capable of observing LAN traffic. Do not expose the Cerbo MQTT broker directly to an untrusted network or the public Internet.
 
-TLS/8883 is **not yet implemented**. Do not configure the ESP32 for a Cerbo security profile that requires TLS-only MQTT and expect it to work. See [CERBO_MQTT_SECURITY.md](CERBO_MQTT_SECURITY.md).
+Do not configure the ESP32 for a Cerbo security profile that requires TLS-only MQTT and expect it to work. Changing the port to `8883` does not enable TLS.
 
 ## 2. Configure the ESP32
 
@@ -88,9 +84,9 @@ Create one path each for:
 
 ## 4. Create the MQTT input nodes
 
-Note: a .json file exists in the Node-Red folder. This can be imported directly into a Node-Red flow (aka tab), or you can follow the directions below. Click publish after modifying a flow in Node-Red.
+Create the MQTT-in and validation nodes manually using the directions below. Click **Deploy** after modifying the Node-RED flow.
 
-Use the Cerbo's local MQTT broker from Node-RED. A Node-RED flow running on the Cerbo can normally use the local broker rather than routing back out through the LAN.
+Use the Cerbo's local MQTT broker from Node-RED. A Node-RED flow running on the Cerbo can normally use `127.0.0.1:1883` for the local broker when plain MQTT access is available.
 
 Subscribe to:
 
@@ -106,7 +102,7 @@ The ESP32 publishes retained messages, so a newly deployed/restarted Node-RED fl
 
 The MQTT payload is a scalar Celsius value. The Victron Virtual Temperature Sensor expects an object containing `Temperature`.
 
-Use a Function node for each topic that validates the number before forwarding it. A suitable function is:
+Use a Function node for each topic that validates the number before forwarding it:
 
 ```javascript
 const value = Number(msg.payload);
@@ -145,7 +141,7 @@ Wire each validation Function to its matching virtual temperature sensor.
 
 ## 7. Test the Node-RED -> Victron -> VRM path first
 
-Before depending on MQTT, it is useful to inject known values manually into the validation/virtual-device path.
+Before depending on MQTT, inject known values manually into the validation/virtual-device path.
 
 Example values:
 
@@ -241,7 +237,5 @@ First verify the virtual temperature sensor updates locally on the Cerbo. If man
 
 ## Related files
 
-- [Node-Red/README-MQTT.md](../Node-Red/README-MQTT.md) — compact Node-RED setup reference.
-- [CERBO_MQTT_TOPICS.md](CERBO_MQTT_TOPICS.md) — exact topic contract.
-- [CERBO_MQTT_SECURITY.md](CERBO_MQTT_SECURITY.md) — current security scope/limitations.
 - [USER_GUIDE.md](USER_GUIDE.md) — local menu and ESP32 configuration reference.
+- [../Node-Red/README-MQTT.md](../Node-Red/README-MQTT.md) — pointer to this canonical guide and explanation of the removed legacy flow export.
