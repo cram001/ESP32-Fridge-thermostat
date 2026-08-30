@@ -12,6 +12,16 @@ For the complete operating and menu reference, see [Device setup and menu guide]
 
 ---
 
+## Possible Migrations
+
+It would be relatively simple to either migrate the code or replicate the logic on a Shelly Device (Shelly Plus Uni or similar). The Shelly Plus Uni is a self contained ESP32 with ?? MB RAM. It has all the required IO and two build-in relays and could be implemented much simpler (physically) and cheaper (less components) as it could be built without a display and rotary encoder. This would allow the Shelly to be located anywhere, even out of sight, so long as access to the button is maintained. The configuration would be done via a web interface (or the shelly app). The button access is retained in case the built-in access point must be re-enabled.
+
+The disadvantage of such an implementation is there would not be a display near the fridge/freezer and the users would need to know how to access the web UI. They also would need to remember where this box is in case it's located out of sigh! (near the compressor would be best for ease of maintennace).
+
+Another possible upgrade would be to use Ruuvi Pro 2-in-1 tags for temp sensing.  These are wireless and with the right battery, resist the cold well. This would simplify installation as it reduces the number of wires. The 2-in-1 tags are aprox USD 50 each.
+
+
+
 ## Features
 
 ### Refrigeration control
@@ -23,6 +33,7 @@ For the complete operating and menu reference, see [Device setup and menu guide]
 - Configurable fan start delay to avoid reacting to short temperature changes.
 - Independent minimum run times for spillover and circulation fans.
 - Optional freezer-temperature lockout that immediately blocks spillover when the freezer is too warm.
+- Persistent **Override Fans** mode for freezer-only operation; `All fans off` forces both fan outputs OFF until the operator returns the setting to `Normal operation`.
 - Refrigerator, freezer, and ambient temperature calibration.
 - Celsius or Fahrenheit OLED display.
 - Six-sample rolling average for displayed/control temperatures, while freezer lockout uses the latest valid freezer sample for faster protective action.
@@ -46,17 +57,20 @@ If the refrigerator probe fails, normal thermostat control is disabled and the s
 
 When the refrigerator sensor becomes healthy again, **GET-HOME automatically exits and normal automatic thermostat control resumes**.
 
+`Override Fans = All fans off` has higher priority than GET-HOME and keeps both fan outputs physically OFF. Temperature monitoring and alarms continue.
+
 ### Local user interface
 
 - 2.42-inch 128x64 SSD1309 SPI OLED.
 - DFRobot SEN0502 I2C rotary encoder with pushbutton.
-- **24-item** local settings/service menu.
+- **25-item** local settings/service menu.
 - Transactional editing: changes are previewed in RAM and only committed when the encoder is pressed again.
 - Timed-out, interrupted, or aborted edits restore the previous value instead of saving partial changes.
 - `SAVED` confirmation after committed changes.
+- `Override Fans`: `Normal operation` / `All fans off`; the selection persists across reboot/power loss.
 - User-selectable display layout: `FRDG | FRZ` or `FRZ | FRDG`.
 - Fan indications follow the physical compartment layout: **CIRC** with **FRDG**, **SPILL** with **FRZ**.
-- Animated fan symbols indicate active outputs.
+- Animated fan symbols indicate active outputs; forced-off mode shows a `FANS OFF` banner and slashed static fan symbols for both outputs.
 - Configurable OLED contrast and display timeout.
 - Pixel shifting reduces OLED burn-in risk.
 - `About` screen shows firmware version and build date.
@@ -202,7 +216,7 @@ This is a PlatformIO project. Select environment `firebeetle2_esp32e_n16r2`, bui
 
 ### 3. Verify the startup hardware test
 
-At boot the splash screen remains visible for approximately **15 seconds** and both fan outputs run. Confirm both physical fans operate correctly before relying on the thermostat.
+At boot the splash screen remains visible for approximately **15 seconds** and both fan outputs run in `Normal operation`. If the persisted `Override Fans` setting is `All fans off`, the startup fan test is deliberately suppressed and the splash screen shows `FANS OFF`.
 
 ### 4. Configure Wi-Fi and optional integrations
 
@@ -220,17 +234,19 @@ Sensor roles are never assigned automatically from OneWire order. Use `Assign fr
 
 ### 6. Configure the thermostat
 
-Review `Fridge max T`, `Fridge min T`, `Freez T lockout`, the two high-temperature alarms, fan delay, minimum run times, GET-HOME setting, buzzer, OLED contrast, display timeout, display layout, and Cerbo MQTT reporting interval.
+Review `Fridge max T`, `Fridge min T`, `Freez T lockout`, the two high-temperature alarms, fan delay, minimum run times, GET-HOME setting, buzzer, OLED contrast, display timeout, display layout, Cerbo MQTT reporting interval, and `Override Fans`.
+
+For normal two-compartment operation use `Override Fans = Normal operation`. To use only the freezer and prevent cold-air transfer/circulation in the refrigerator side, select `All fans off`. The override remains active after reboot until manually changed back.
 
 `Fridge min T` must remain at least **0.5 C below** `Fridge max T`.
 
 ### 7. Run the service output test
 
-Use `Test outputs` to test `SPILLOVER`, `CIRCULATION`, and `BUZZER`. Each test stops automatically after five seconds and can also be stopped early by pressing the encoder.
+Use `Test outputs` to test `SPILLOVER`, `CIRCULATION`, and `BUZZER`. Each test stops automatically after five seconds and can also be stopped early by pressing the encoder. Fan output tests cannot energize a fan while `Override Fans = All fans off`; return to `Normal operation` before intentionally testing either fan.
 
 ### 8. Test the sensor-failure recovery path
 
-Disconnect the refrigerator probe, confirm the fault and GET-HOME behavior, reconnect the bus, and confirm the assigned probes return automatically and normal control resumes.
+Disconnect the refrigerator probe, confirm the fault and GET-HOME behavior, reconnect the bus, and confirm the assigned probes return automatically and normal control resumes. If `All fans off` is selected, GET-HOME remains inhibited by the operator override.
 
 ### 9. If using Cerbo GX, verify VRM temperatures
 
@@ -242,6 +258,7 @@ After completing the Node-RED setup, verify that Fridge, Freezer, and Cabin Ambi
 
 | Condition | Spillover fan | Circulation fan |
 |---|---:|---:|
+| `Override Fans = All fans off` | **FORCED OFF** | **FORCED OFF** |
 | Refrigerator at/above `Fridge max T` after delay | ON | ON |
 | Refrigerator between MIN and MAX | Normally OFF | Normally OFF |
 | Refrigerator at/below `Fridge min T` after delay | OFF after minimum runtime | ON |
@@ -249,6 +266,8 @@ After completing the Node-RED setup, verify that Fridge, Freezer, and Cabin Ambi
 | Refrigerator probe failed, GET-HOME OFF | OFF | No automatic thermostat control |
 | Refrigerator probe failed, GET-HOME selected | Timed duty cycle | No normal thermostat control |
 | Refrigerator probe becomes healthy again | Automatic control resumes | Automatic control resumes |
+
+The override is the highest-priority fan command. It does not disable temperature sensing or alarms.
 
 ---
 
