@@ -23,11 +23,18 @@ class CerboMqttPublisher {
   // published. A successful reconnect causes an immediate publish attempt.
   void service(uint32_t now, float fridge_c, float freezer_c, float ambient_c);
 
+  // Temporarily stop MQTT network traffic without changing the user's saved
+  // configuration. Used during OTA so broker reconnect/publish activity cannot
+  // compete with the firmware transfer.
+  void suspend();
+  void resume();
+  bool suspended() const { return suspended_; }
+
   // Enabled reflects the user's reporting choice. A missing/invalid broker
   // host is therefore shown as enabled-but-disconnected rather than silently
   // hiding the MQTT status indicator.
   bool enabled() const { return publish_interval_ms_ != 0; }
-  bool connected() { return enabled() && mqtt_.connected(); }
+  bool connected() { return enabled() && !suspended_ && mqtt_.connected(); }
 
   // Force the next successful service cycle to publish immediately.
   void request_publish() { publish_due_ = true; }
@@ -56,6 +63,7 @@ class CerboMqttPublisher {
   uint32_t last_reconnect_attempt_ms_ = 0;
   uint32_t reconnect_delay_ms_ = kReconnectMinMs;
   bool publish_due_ = false;
+  bool suspended_ = false;
 };
 
 // Single application-wide publisher instance. Keeping the publisher in one

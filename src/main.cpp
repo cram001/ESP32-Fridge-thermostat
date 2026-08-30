@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <DFRobot_VisualRotaryEncoder.h>
-#include <WiFi.h>
 #include <Wire.h>
 #include <esp_task_wdt.h>
 
@@ -20,75 +19,78 @@
 #include "sensesp/signalk/signalk_output.h"
 #include "sensesp/ui/config_item.h"
 
-// Keep the controller implementation unchanged, but rename its Arduino entry
-// points so this file can put a very small OTA-priority wrapper around them.
-// All headers are included above before these macros are defined so setup/loop
-// identifiers inside dependencies cannot be rewritten by the preprocessor.
+namespace {
+
+// PR #25 moved the controller into main_implementation.inc so an OTA-exclusive
+// wrapper could take over Arduino setup()/loop(). Keep that split for now, but
+// make the embedded controller use SensESP's OTA configuration rather than a
+// second independently-started ArduinoOTA instance.
+class FridgeSensESPAppBuilder : public sensesp::SensESPAppBuilder {
+ public:
+  FridgeSensESPAppBuilder() { enable_ota("esp32!"); }
+};
+
+// main_implementation.inc still contains the pre-PR25 manual ArduinoOTA calls.
+// Neutralize only those legacy calls while the implementation is included.
+// The real ArduinoOTA instance is owned and serviced by SensESP.
+class LegacyArduinoOtaNoop {
+ public:
+  void setHostname(const char*) {}
+  void begin() {}
+  void handle() {}
+};
+
+LegacyArduinoOtaNoop legacy_arduino_ota_noop;
+
+}  // namespace
+
+// Rename the controller entry points and substitute the SensESP OTA-enabled
+// builder. This deliberately avoids running two ArduinoOTA begin/handle paths.
 #define setup fridge_controller_setup
 #define loop fridge_controller_loop
+#define SensESPAppBuilder FridgeSensESPAppBuilder
+#define ArduinoOTA legacy_arduino_ota_noop
 #include "main_implementation.inc"
+#undef ArduinoOTA
+#undef SensESPAppBuilder
 #undef loop
 #undef setup
-
-namespace {
-volatile bool ota_in_progress = false;
-constexpr int kOtaReceiveTimeoutMs = 10000;
-}
 
 void setup() {
   fridge_controller_setup();
 
-  // espota.py's --timeout option only controls the initial invitation. The
-  // ArduinoOTA receiver has its own much shorter inter-packet timeout; increase
-  // it so a brief Wi-Fi pause while flash is being written does not abort an
-  // otherwise healthy transfer.
-  ArduinoOTA.setTimeout(kOtaReceiveTimeoutMs);
+  // SensESP 3.4.0 owns and services the single ArduinoOTA instance. Its current
+  // SKWSClient has no supported suspend/resume API (unlike the older SensESP
+  // release used by the Yanmar project), so do not reach into its protected
+  // websocket internals. We can still eliminate the other application-owned
+  // competing network client: Cerbo MQTT is disconnected for the transfer and
+  // resumes cleanly after a failed/non-rebooting OTA attempt.
+  if (sensesp_app != nullptr) {
+    sensesp_app->get_event_loop()->onDelay(0, []() {
+      ArduinoOTA.onStart([]() {
+        ESP_LOGI("OTA", "OTA starting: suspending Cerbo MQTT");
+        cerbo_mqtt_publisher().suspend();
+      });
 
-  // The existing implementation has already called ArduinoOTA.begin().
-  // Registering the callbacks here is valid and avoids disturbing the proven
-  // controller startup sequence. Once OTA starts, loop() below stops servicing
-  // SensESP, Signal K, Cerbo MQTT, display, sensors, and control logic until the
-  // transfer finishes or errors. Physical outputs therefore remain at their
-  // last commanded state for the short update window.
-  ArduinoOTA.onStart([]() {
-    ota_in_progress = true;
+      ArduinoOTA.onEnd([]() {
+        ESP_LOGI("OTA", "OTA transfer complete");
+        // Successful firmware OTA normally reboots immediately. Resume here as
+        // a defensive fallback in case the framework does not reboot.
+        cerbo_mqtt_publisher().resume();
+      });
 
-    // Disable ESP32 modem power saving only for the firmware transfer. This
-    // improves packet latency/reliability without increasing normal operating
-    // power consumption between OTA updates.
-    WiFi.setSleep(false);
-
-    ESP_LOGW("OTA", "OTA exclusive mode started (receive timeout %d ms)",
-             kOtaReceiveTimeoutMs);
-  });
-
-  ArduinoOTA.onEnd([]() {
-    ESP_LOGW("OTA", "OTA transfer complete");
-    ota_in_progress = false;
-    // Successful firmware OTA normally reboots immediately after this callback,
-    // so there is no need to restore modem sleep here.
-  });
-
-  ArduinoOTA.onError([](ota_error_t error) {
-    ESP_LOGE("OTA", "OTA failed with error %u; resuming normal services",
-             static_cast<unsigned>(error));
-    ota_in_progress = false;
-    WiFi.setSleep(true);
-  });
+      ArduinoOTA.onError([](ota_error_t error) {
+        ESP_LOGE("OTA", "OTA failed with error %u; resuming Cerbo MQTT",
+                 static_cast<unsigned>(error));
+        cerbo_mqtt_publisher().resume();
+      });
+    });
+  }
 }
 
 void loop() {
-  // Give OTA first chance to consume incoming packets. If this call starts an
-  // update, onStart() flips ota_in_progress before any SensESP work is run.
-  ArduinoOTA.handle();
-  feed_task_watchdog();
-
-  if (ota_in_progress) {
-    // Yield to the Wi-Fi/TCP stack while deliberately avoiding event_loop()->
-    // tick() and all other application network clients during flash writes.
-    delay(1);
-    return;
-  }
-
+  // SensESP's event loop services the single ArduinoOTA instance. The fridge
+  // controller continues executing during OTA so physical fan state and safety
+  // logic remain deterministic rather than freezing at the last command.
   fridge_controller_loop();
 }
