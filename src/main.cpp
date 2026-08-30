@@ -31,11 +31,9 @@ class FridgeSensESPAppBuilder : public sensesp::SensESPAppBuilder {
   FridgeSensESPAppBuilder() { enable_ota("esp32!"); }
 };
 
-// Neutralize the three legacy manual ArduinoOTA calls inside
-// main_implementation.inc. SensESP now owns ArduinoOTA.begin()/handle(); keeping
-// those old call sites inactive avoids running two OTA service mechanisms while
-// allowing the controller implementation to remain a single shared unit for
-// firmware and tests.
+// Neutralize the legacy manual ArduinoOTA calls in main_implementation.inc.
+// SensESP owns ArduinoOTA.begin() and its normal event-loop servicing; keeping
+// these old call sites inactive avoids initializing or servicing OTA twice.
 class LegacyArduinoOtaNoop {
  public:
   void setHostname(const char*) {}
@@ -82,22 +80,20 @@ const char* ota_error_name(ota_error_t error) {
 void setup() {
   fridge_controller_setup();
 
-  auto ws_client = sensesp_app ? sensesp_app->get_ws_client() : nullptr;
-
-  ArduinoOTA.onStart([ws_client]() {
+  ArduinoOTA.onStart([]() {
     ota_in_progress = true;
 
-    // Stop nonessential network traffic. The controller loop will stop after
-    // this iteration; physical fan outputs then remain at their last commanded
-    // state for the transfer. The persistent all-fans-off interlock therefore
-    // remains physically OFF during OTA as well.
-    if (ws_client) ws_client->suspend();
+    // Cerbo MQTT is explicitly disconnected and held off. Signal K is
+    // effectively suspended by the OTA-exclusive loop below: once this callback
+    // returns, subsequent iterations do not tick the SensESP event loop at all.
+    // Only ArduinoOTA.handle() is serviced until success or failure, so the SK
+    // websocket cannot generate reconnect or publish traffic during the transfer.
     cerbo_mqtt_publisher().suspend();
 
     if (output_test_active) stop_output_test();
     buzzer.stop();
 
-    ESP_LOGW("OTA", "OTA started: Signal K and Cerbo MQTT suspended");
+    ESP_LOGW("OTA", "OTA started: Signal K event loop and Cerbo MQTT suspended");
   });
 
   ArduinoOTA.onEnd([]() {
@@ -107,11 +103,16 @@ void setup() {
     ESP_LOGW("OTA", "OTA transfer complete; reboot pending");
   });
 
-  ArduinoOTA.onError([ws_client](ota_error_t error) {
+  ArduinoOTA.onError([](ota_error_t error) {
     ESP_LOGE("OTA", "OTA failed: %s error (%u); resuming normal services",
              ota_error_name(error), static_cast<unsigned>(error));
 
-    if (ws_client) ws_client->resume();
+    // The SK websocket may have been timed out by the server while its event
+    // loop was paused. restart() gives it a clean reconnection path instead of
+    // relying on stale transport state after a failed OTA attempt.
+    if (sensesp_app && sensesp_app->get_ws_client()) {
+      sensesp_app->get_ws_client()->restart();
+    }
     cerbo_mqtt_publisher().resume(millis());
     ota_in_progress = false;
   });
@@ -121,10 +122,10 @@ void loop() {
   feed_task_watchdog();
 
   if (ota_in_progress) {
-    // SensESP owns ArduinoOTA.handle() through its event loop. Keep only that
-    // event loop and the watchdog alive during the transfer; sensors, display,
-    // control logic, Signal K traffic, and MQTT servicing remain quiescent.
-    event_loop()->tick();
+    // Do not tick SensESP here: its event loop also owns Signal K and other
+    // services. Calling ArduinoOTA directly keeps firmware receive traffic
+    // exclusive while still using SensESP for OTA configuration/initialization.
+    ArduinoOTA.handle();
     feed_task_watchdog();
     delay(1);
     return;
