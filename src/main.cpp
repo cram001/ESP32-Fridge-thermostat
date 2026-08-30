@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <ArduinoOTA.h>
 #include <DFRobot_VisualRotaryEncoder.h>
 #include <Wire.h>
 #include <esp_task_wdt.h>
@@ -1044,6 +1045,10 @@ void setup() {
   setup_signalk();
   sensesp_app->start();
 
+  // Configure OTA
+  ArduinoOTA.setHostname("fridge-controller");
+  ArduinoOTA.begin();
+
   setup_task_watchdog();
 
   splash_started_ms = millis();
@@ -1057,6 +1062,7 @@ void setup() {
 }
 
 void loop() {
+  ArduinoOTA.handle();
   feed_task_watchdog();
   event_loop()->tick();
   const uint32_t now = millis();
