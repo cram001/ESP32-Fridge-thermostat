@@ -59,33 +59,30 @@ LegacyArduinoOtaNoop legacy_arduino_ota_noop;
 void setup() {
   fridge_controller_setup();
 
-  // Match the known-working Yanmar architecture: after SensESP has created its
-  // network objects, suspend only competing network clients during OTA. The
-  // controller, temperature monitoring, watchdog, display, alarms, and fan
-  // safety logic continue to run normally while the inactive OTA slot is being
-  // written.
+  // SensESP 3.4.0 owns and services the single ArduinoOTA instance. Its current
+  // SKWSClient has no supported suspend/resume API (unlike the older SensESP
+  // release used by the Yanmar project), so do not reach into its protected
+  // websocket internals. We can still eliminate the other application-owned
+  // competing network client: Cerbo MQTT is disconnected for the transfer and
+  // resumes cleanly after a failed/non-rebooting OTA attempt.
   if (sensesp_app != nullptr) {
-    auto* ws_client = sensesp_app->get_ws_client().get();
-    sensesp_app->get_event_loop()->onDelay(0, [ws_client]() {
-      ArduinoOTA.onStart([ws_client]() {
-        ESP_LOGI("OTA", "OTA starting: suspending Signal K and Cerbo MQTT");
-        if (ws_client != nullptr) ws_client->suspend();
+    sensesp_app->get_event_loop()->onDelay(0, []() {
+      ArduinoOTA.onStart([]() {
+        ESP_LOGI("OTA", "OTA starting: suspending Cerbo MQTT");
         cerbo_mqtt_publisher().suspend();
       });
 
-      ArduinoOTA.onEnd([ws_client]() {
+      ArduinoOTA.onEnd([]() {
         ESP_LOGI("OTA", "OTA transfer complete");
         // Successful firmware OTA normally reboots immediately. Resume here as
         // a defensive fallback in case the framework does not reboot.
         cerbo_mqtt_publisher().resume();
-        if (ws_client != nullptr) ws_client->resume();
       });
 
-      ArduinoOTA.onError([ws_client](ota_error_t error) {
-        ESP_LOGE("OTA", "OTA failed with error %u; resuming network services",
+      ArduinoOTA.onError([](ota_error_t error) {
+        ESP_LOGE("OTA", "OTA failed with error %u; resuming Cerbo MQTT",
                  static_cast<unsigned>(error));
         cerbo_mqtt_publisher().resume();
-        if (ws_client != nullptr) ws_client->resume();
       });
     });
   }
