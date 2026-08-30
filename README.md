@@ -12,6 +12,16 @@ For the complete operating and menu reference, see [Device setup and menu guide]
 
 ---
 
+## Possible Migrations
+
+It would be relatively simple to either migrate the code or replicate the logic on a Shelly Device (Shelly Plus Uni or similar). The Shelly Plus Uni is a self contained ESP32 with ?? MB RAM. It has all the required IO and two build-in relays and could be implemented much simpler (physically) and cheaper (less components) as it could be built without a display and rotary encoder. This would allow the Shelly to be located anywhere, even out of sight, so long as access to the button is maintained. The configuration would be done via a web interface (or the shelly app). The button access is retained in case the built-in access point must be re-enabled.
+
+The disadvantage of such an implementation is there would not be a display near the fridge/freezer and the users would need to know how to access the web UI. They also would need to remember where this box is in case it's located out of sigh! (near the compressor would be best for ease of maintennace).
+
+Another possible upgrade would be to use Ruuvi Pro 2-in-1 tags for temp sensing.  These are wireless and with the right battery, resist the cold well. This would simplify installation as it reduces the number of wires. The 2-in-1 tags are aprox USD 50 each.
+
+
+
 ## Features
 
 ### Refrigeration control
