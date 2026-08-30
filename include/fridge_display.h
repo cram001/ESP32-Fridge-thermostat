@@ -38,8 +38,8 @@ class FridgeDisplay {
   void set_contrast(uint8_t percent);
   void set_enabled(bool enabled);
   void draw_splash(const char* vessel_name, const char* version,
-                   uint8_t detected_count,
-                   uint8_t seconds_remaining);
+                   uint8_t detected_count, uint8_t seconds_remaining,
+                   bool fans_forced_off = false);
   void draw_saved();
   void draw_output_test(uint8_t selection, bool active,
                         uint8_t seconds_remaining);
