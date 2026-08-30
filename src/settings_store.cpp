@@ -100,6 +100,7 @@ bool SettingsStore::to_json(JsonObject& root) {
   root["circulation_min_on_min"] = settings_.circulation_min_on_min;
   root["emergency_spillover_on_min"] =
       settings_.emergency_spillover_on_min;
+  root["fan_override_all_off"] = settings_.fan_override_all_off;
   root["buzzer_mode"] = settings_.buzzer_mode;
   root["oled_contrast_percent"] = settings_.oled_contrast_percent;
   root["display_timeout_min"] = settings_.display_timeout_min;
@@ -132,6 +133,8 @@ bool SettingsStore::from_json(const JsonObject& root) {
   settings_.emergency_spillover_on_min =
       root["emergency_spillover_on_min"] |
       settings_.emergency_spillover_on_min;
+  settings_.fan_override_all_off =
+      root["fan_override_all_off"] | settings_.fan_override_all_off;
   if (root.containsKey("buzzer_mode")) {
     settings_.buzzer_mode = root["buzzer_mode"] | settings_.buzzer_mode;
   } else if (root.containsKey("buzzer_enabled")) {
@@ -215,6 +218,7 @@ const String ConfigSchema(const SettingsStore&) {
       "spillover_min_on_min":{"title":"Spillover minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
       "circulation_min_on_min":{"title":"Circulation minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
       "emergency_spillover_on_min":{"title":"Get-me-home spillover fan (minutes ON per hour; 0 = OFF)","type":"integer","enum":%EMERGENCY_OPTIONS%},
+      "fan_override_all_off":{"title":"Override Fans - All fans off","description":"Persistent freezer-only mode. When enabled, both fan outputs are forced OFF and cannot be energized by normal control, GET-HOME, startup fan test, or output test.","type":"boolean"},
       "buzzer_mode":{"title":"Buzzer","description":"Alarm sound; OFF disables audible alarms.","type":"integer","oneOf":[{"const":0,"title":"OFF"},{"const":1,"title":"STEADY"},{"const":2,"title":"DOUBLE"},{"const":3,"title":"HI-LO"},{"const":4,"title":"TRIPLE"}]},
       "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","enum":%CONTRAST_OPTIONS%},
       "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":%DISPLAY_TIMEOUT_OPTIONS%},
