@@ -3,13 +3,14 @@
 #include "cerbo_mqtt_interval.h"
 
 namespace {
-constexpr uint8_t kSettingCount = 24;
+constexpr uint8_t kSettingCount = 25;
 constexpr uint8_t kLayoutSetting = 17;
 constexpr uint8_t kCerboMqttSetting = 18;
-constexpr uint8_t kOutputTestSetting = 19;
-constexpr uint8_t kFirstAssignmentSetting = 20;
-constexpr uint8_t kLastAssignmentSetting = 22;
-constexpr uint8_t kAboutSetting = 23;
+constexpr uint8_t kFanOverrideSetting = 19;
+constexpr uint8_t kOutputTestSetting = 20;
+constexpr uint8_t kFirstAssignmentSetting = 21;
+constexpr uint8_t kLastAssignmentSetting = 23;
+constexpr uint8_t kAboutSetting = 24;
 }
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
@@ -33,7 +34,8 @@ void FridgeDisplay::set_enabled(bool enabled) {
 
 void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
                                 uint8_t detected_count,
-                                uint8_t seconds_remaining) {
+                                uint8_t seconds_remaining,
+                                bool fans_forced_off) {
   oled_.clearBuffer();
 
   oled_.drawVLine(63, 14, 30);
@@ -68,7 +70,7 @@ void FridgeDisplay::draw_splash(const char* vessel_name, const char* version,
   char status[18];
   snprintf(status, sizeof(status), "PROBES %u", detected_count);
   oled_.drawStr(2, 63, status);
-  oled_.drawStr(54, 63, "FANS ON");
+  oled_.drawStr(54, 63, fans_forced_off ? "FANS OFF" : "FANS ON");
   snprintf(status, sizeof(status), "%us", seconds_remaining);
   const int countdown_width = oled_.getStrWidth(status);
   oled_.drawStr(127 - countdown_width, 63, status);
@@ -206,15 +208,12 @@ void FridgeDisplay::draw_warning_triangle(int x, int y) {
 
 void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   // Fixed top-row zones:
-  // [ Signal K ] [ MQTT ] [ LOCKOUT / GET-HOME ] [ warning ] [ ambient ]
+  // [ Signal K ] [ MQTT ] [ mode banner ] [ warning ] [ ambient ]
   // MQTT is omitted entirely when disabled. The ambient temperature keeps the
-  // existing 5x7 font and right-aligned position; only the left-side status
-  // zones move to make room for the new connection icon.
+  // existing 5x7 font and right-aligned position.
   draw_wifi_icon(x + 9, y + 9, model.signalk_connected);
 
   if (model.cerbo_mqtt_interval_s != 0) {
-    // Compact broker/network glyph: three edge nodes converging on a center
-    // broker. A diagonal strike-through means configured but disconnected.
     constexpr int kMqttCenterX = 23;
     const int mx = x + kMqttCenterX;
     const int my = y + 6;
@@ -249,16 +248,17 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   constexpr int kBannerLeft = 31;
   constexpr int kBannerRight = 81;
 
-  // Operational-mode banner. GET-HOME means the fridge probe is failed and a
-  // non-zero emergency duty cycle is selected. LOCKOUT means the freezer is
-  // still above its lockout threshold, so normal spillover is inhibited.
   const bool get_home_mode =
       model.control->sensor_fault &&
       model.settings->emergency_spillover_on_min != 0;
   const bool freezer_lockout = model.control->freezer_lockout;
+  const bool fans_forced_off = model.settings->fan_override_all_off;
   const char* banner = nullptr;
-  if (get_home_mode && freezer_lockout) {
-    // Both states matter. Alternate rather than hiding either one.
+  if (fans_forced_off) {
+    // The explicit operator override takes display priority because it explains
+    // why neither fan will run even if another control mode is requesting one.
+    banner = "FANS OFF";
+  } else if (get_home_mode && freezer_lockout) {
     banner = ((millis() / 2000UL) % 2U == 0U) ? "LOCKOUT" : "GET-HOME";
   } else if (freezer_lockout) {
     banner = "LOCKOUT";
@@ -280,8 +280,6 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
     }
   }
 
-  // The warning triangle has a permanent home immediately left of ambient.
-  // It no longer shifts or competes with LOCKOUT / GET-HOME banners.
   if (model.fault_count > 0 && millis() % 2000UL < 650UL) {
     draw_warning_triangle(x + kWarningTriangleX, y + 1);
   }
@@ -323,9 +321,6 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   oled_.setFont(u8g2_font_6x10_tf);
   const uint8_t fan_phase = (millis() / 200) % 6;
 
-  // Keep each fan status under the compartment where that equipment is
-  // physically associated: circulation with FRDG, spillover with FRZ. Position
-  // the symbol from the rendered label width so spacing stays consistent.
   constexpr int kFanTextGapPx = 3;
   constexpr int kFanRadiusPx = 4;
   const bool spill_left = !model.settings->fridge_on_left;
@@ -342,13 +337,20 @@ void FridgeDisplay::draw_home(int x, int y, const DisplayModel& model) {
   const int circ_off_x = circ_fan_x - dash_w / 2;
 
   oled_.drawStr(spill_label_x, y + 62, "SPILL");
-  if (model.control->spillover) {
+  if (fans_forced_off) {
+    draw_fan(spill_fan_x, y + 57, 0);
+    oled_.drawLine(spill_fan_x - 5, y + 52, spill_fan_x + 5, y + 62);
+  } else if (model.control->spillover) {
     draw_fan(spill_fan_x, y + 57, fan_phase);
   } else {
     oled_.drawStr(spill_off_x, y + 62, "-");
   }
+
   oled_.drawStr(circ_label_x, y + 62, "CIRC");
-  if (model.control->circulation) {
+  if (fans_forced_off) {
+    draw_fan(circ_fan_x, y + 57, 0);
+    oled_.drawLine(circ_fan_x - 5, y + 52, circ_fan_x + 5, y + 62);
+  } else if (model.control->circulation) {
     draw_fan(circ_fan_x, y + 57, fan_phase);
   } else {
     oled_.drawStr(circ_off_x, y + 62, "-");
@@ -462,6 +464,11 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     t.name = "Cerbo MQTT";
     snprintf(t.value, sizeof(t.value), "%s",
              cerbo_mqtt::ReportIntervalLabel(model.cerbo_mqtt_interval_s));
+  } else if (model.selected_setting == kFanOverrideSetting) {
+    t.name = "Override Fans";
+    snprintf(t.value, sizeof(t.value), "%s",
+             model.settings->fan_override_all_off ? "All fans off"
+                                                   : "Normal operation");
   } else if (model.selected_setting == kOutputTestSetting) {
     t.name = "Test outputs";
     snprintf(t.value, sizeof(t.value), "Press to open");
