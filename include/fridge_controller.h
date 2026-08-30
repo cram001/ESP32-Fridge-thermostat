@@ -19,6 +19,10 @@ struct ControllerSettings {
   // Explicit get-me-home mode used only when the fridge probe has failed.
   // Zero keeps the spillover fan off; non-zero values are minutes ON per hour.
   uint8_t emergency_spillover_on_min = 0;
+  // Persistent operator override for freezer-only operation. When true, both
+  // fans remain physically off regardless of thermostat, GET-HOME, lockout,
+  // startup fan test, or output-test requests.
+  bool fan_override_all_off = false;
   // 0 OFF, 1 STEADY, 2 DOUBLE, 3 HI-LO, 4 TRIPLE.
   uint8_t buzzer_mode = hw::kDefaultBuzzerMode;
   uint8_t oled_contrast_percent = 50;
@@ -103,7 +107,17 @@ struct ControllerOutput {
   bool circulation = false;
   bool sensor_fault = true;
   bool freezer_lockout = true;
+  bool fans_forced_off = false;
 };
+
+inline void ApplyFanOverride(ControllerOutput& output,
+                             const ControllerSettings& settings) {
+  output.fans_forced_off = settings.fan_override_all_off;
+  if (settings.fan_override_all_off) {
+    output.spillover = false;
+    output.circulation = false;
+  }
+}
 
 class FridgeController {
  public:
@@ -120,8 +134,19 @@ class FridgeController {
     output_.sensor_fault = !fridge_valid;
     output_.freezer_lockout = freezer_valid &&
                               freezer_c >= settings.freezer_lockout_c;
+    output_.fans_forced_off = settings.fan_override_all_off;
 
     const uint32_t now = millis();
+    if (settings.fan_override_all_off) {
+      output_.spillover = false;
+      output_.circulation = false;
+      spillover_pending_ = false;
+      circulation_pending_ = false;
+      spillover_started_at_ = 0;
+      circulation_started_at_ = 0;
+      return output_;
+    }
+
     if (output_.sensor_fault || output_.freezer_lockout) {
       // A fridge fault disables normal thermostat control. A valid freezer
       // reading at its lockout threshold immediately overrides minimum runtime.
@@ -206,7 +231,7 @@ class EmergencySpilloverController {
  public:
   bool update(uint32_t now, bool fridge_probe_failed, bool freezer_valid,
               float freezer_c, const ControllerSettings& settings) {
-    if (!fridge_probe_failed) {
+    if (!fridge_probe_failed || settings.fan_override_all_off) {
       active_ = false;
       return false;
     }

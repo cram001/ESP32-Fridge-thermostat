@@ -50,7 +50,6 @@ float ambient_c = NAN;
 bool temperature_sample_ready = false;
 bool temperature_sample_updated = false;
 
-
 bool assignment_mode = false;
 uint8_t assignment_role = 0;
 uint8_t assignment_sensor = 0;
@@ -85,13 +84,14 @@ uint32_t last_menu_activity_ms = 0;
 constexpr uint32_t kMenuActivityTimeoutMs = 10UL * 1000UL;
 constexpr uint32_t kSavedMessageDurationMs = 750;
 constexpr uint32_t kOutputTestDurationMs = 5UL * 1000UL;
-constexpr uint8_t kSettingCount = 24;
+constexpr uint8_t kSettingCount = 25;
 constexpr uint8_t kLayoutSetting = 17;
 constexpr uint8_t kCerboMqttSetting = 18;
-constexpr uint8_t kOutputTestSetting = 19;
-constexpr uint8_t kFirstAssignmentSetting = 20;
-constexpr uint8_t kLastAssignmentSetting = 22;
-constexpr uint8_t kAboutSetting = 23;
+constexpr uint8_t kFanOverrideSetting = 19;
+constexpr uint8_t kOutputTestSetting = 20;
+constexpr uint8_t kFirstAssignmentSetting = 21;
+constexpr uint8_t kLastAssignmentSetting = 23;
+constexpr uint8_t kAboutSetting = 24;
 constexpr uint8_t kOutputTestOptionCount = 4;
 constexpr uint8_t kOutputTestSpillover = 0;
 constexpr uint8_t kOutputTestCirculation = 1;
@@ -150,6 +150,11 @@ void feed_task_watchdog() {
 }
 
 void write_fan(uint8_t pin, bool on) {
+  // This is the final physical-output interlock. Keeping the override here
+  // means startup fan tests, output tests, normal control, and GET-HOME all
+  // obey the persistent operator request without relying on every caller to
+  // remember the policy.
+  if (settings.fan_override_all_off) on = false;
   digitalWrite(pin, on == hw::kFanActiveHigh ? HIGH : LOW);
 }
 
@@ -169,6 +174,11 @@ void stop_output_test() {
 
 void start_output_test(uint32_t now) {
   if (output_test_selection >= kOutputTestExit) return;
+  if (settings.fan_override_all_off &&
+      (output_test_selection == kOutputTestSpillover ||
+       output_test_selection == kOutputTestCirculation)) {
+    return;
+  }
 
   output_test_active = true;
   output_test_ends_ms = now + kOutputTestDurationMs;
@@ -371,6 +381,11 @@ void update_controller() {
   } else {
     emergency_spillover_controller.update(now, false, false, NAN, settings);
   }
+
+  // Apply again after the fridge-probe failure fallback so the operator's
+  // persistent override remains the final logical state as well as the final
+  // physical-output interlock in write_fan().
+  ApplyFanOverride(control_output, settings);
 
   if (control_output.spillover) {
     if (spillover_started_ms == 0) spillover_started_ms = now;
@@ -833,6 +848,13 @@ void update_encoder() {
       cerbo_mqtt_settings.report_interval_s =
           cerbo_mqtt::kReportIntervalsS[next];
       setting_changed = true;
+    } else if (selected_setting == kFanOverrideSetting) {
+      settings.fan_override_all_off = !settings.fan_override_all_off;
+      if (settings.fan_override_all_off) {
+        write_fan(hw::kSpilloverFanPin, false);
+        write_fan(hw::kCirculationFanPin, false);
+      }
+      setting_changed = true;
     }
 
     if (setting_changed) {
@@ -993,7 +1015,7 @@ void setup() {
   ConfigItem(settings_store)
       ->set_title("Fridge Controller")
       ->set_description(
-          "Thermostat, alarms, fan timing, display layout, calibration, and sensor assignments. "
+          "Thermostat, alarms, fan timing, persistent fan override, display layout, calibration, and sensor assignments. "
           "Numeric limits shown below are enforced by the controller when settings are saved.")
       ->set_sort_order(500);
   ConfigItem(cerbo_mqtt_settings_store)
@@ -1028,7 +1050,8 @@ void setup() {
   const uint8_t splash_seconds = static_cast<uint8_t>(
       (hw::kSplashDurationMs + 999UL) / 1000UL);
   display.draw_splash(vessel_name.c_str(), hw::kFirmwareVersion,
-                      temperatures.detected_count(), splash_seconds);
+                      temperatures.detected_count(), splash_seconds,
+                      settings.fan_override_all_off);
   write_fan(hw::kSpilloverFanPin, true);
   write_fan(hw::kCirculationFanPin, true);
 }
@@ -1047,7 +1070,8 @@ void loop() {
         const uint8_t remaining = static_cast<uint8_t>(
             (hw::kSplashDurationMs - elapsed + 999UL) / 1000UL);
         display.draw_splash(vessel_name.c_str(), hw::kFirmwareVersion,
-                            temperatures.detected_count(), remaining);
+                            temperatures.detected_count(), remaining,
+                            settings.fan_override_all_off);
       }
       return;
     }
