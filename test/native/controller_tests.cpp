@@ -129,6 +129,51 @@ void test_cold_circulation_respects_delay_and_minimum_time() {
         "circulation stops after its minimum runtime");
 }
 
+void test_fan_override_forces_both_off_and_restarts_cleanly() {
+  ControllerSettings settings;
+  settings.fan_delay_s = 5;
+  FridgeController controller;
+
+  g_fake_millis = 1000;
+  controller.update(8.0f, -10.0f, settings, true);
+  g_fake_millis = 6000;
+  ControllerOutput output = controller.update(8.0f, -10.0f, settings, true);
+  check(output.spillover && output.circulation,
+        "normal operation has both fans running before override");
+
+  settings.fan_override_all_off = true;
+  g_fake_millis = 7000;
+  output = controller.update(8.0f, -10.0f, settings, true);
+  check(output.fans_forced_off, "override state is exposed in controller output");
+  check(!output.spillover && !output.circulation,
+        "override immediately forces both logical fan outputs off");
+
+  settings.fan_override_all_off = false;
+  g_fake_millis = 8000;
+  output = controller.update(8.0f, -10.0f, settings, true);
+  check(!output.fans_forced_off, "normal operation clears forced-off state");
+  check(!output.spillover,
+        "leaving override requires a fresh fan-delay qualification");
+  g_fake_millis = 13000;
+  output = controller.update(8.0f, -10.0f, settings, true);
+  check(output.spillover && output.circulation,
+        "normal operation resumes after the full fan delay");
+}
+
+void test_apply_fan_override_is_final_logical_interlock() {
+  ControllerSettings settings;
+  settings.fan_override_all_off = true;
+  ControllerOutput output;
+  output.spillover = true;
+  output.circulation = true;
+
+  ApplyFanOverride(output, settings);
+
+  check(output.fans_forced_off, "final override helper marks forced-off state");
+  check(!output.spillover && !output.circulation,
+        "final override helper clears both fan requests");
+}
+
 void test_emergency_mode_defaults_off() {
   ControllerSettings settings;
   EmergencySpilloverController emergency;
@@ -168,6 +213,20 @@ void test_emergency_respects_only_a_valid_lockout() {
         "freezer lockout engages exactly at its configured maximum");
   check(emergency.update(7000, true, true, -10.0f, settings),
         "valid cold freezer permits get-me-home spillover");
+}
+
+void test_fan_override_blocks_get_home_and_resets_phase() {
+  ControllerSettings settings;
+  settings.emergency_spillover_on_min = 10;
+  settings.fan_override_all_off = true;
+  EmergencySpilloverController emergency;
+
+  check(!emergency.update(1000, true, false, NAN, settings),
+        "all-fans-off override blocks get-me-home spillover");
+
+  settings.fan_override_all_off = false;
+  check(emergency.update(2000, true, false, NAN, settings),
+        "get-me-home starts a fresh phase after override is removed");
 }
 
 void test_changing_emergency_setting_restarts_on_phase() {
@@ -320,9 +379,12 @@ int main() {
   test_spillover_runs_to_min_temperature_and_minimum_time();
   test_freezer_lockout_overrides_spillover_minimum_time();
   test_cold_circulation_respects_delay_and_minimum_time();
+  test_fan_override_forces_both_off_and_restarts_cleanly();
+  test_apply_fan_override_is_final_logical_interlock();
   test_emergency_mode_defaults_off();
   test_emergency_hourly_duty_cycle();
   test_emergency_respects_only_a_valid_lockout();
+  test_fan_override_blocks_get_home_and_resets_phase();
   test_changing_emergency_setting_restarts_on_phase();
   test_fan_delay_survives_millis_rollover();
   test_minimum_runtime_survives_millis_rollover();
