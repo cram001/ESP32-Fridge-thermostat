@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <DFRobot_VisualRotaryEncoder.h>
+#include <WiFi.h>
 #include <Wire.h>
 #include <esp_task_wdt.h>
 
@@ -31,10 +32,17 @@
 
 namespace {
 volatile bool ota_in_progress = false;
+constexpr int kOtaReceiveTimeoutMs = 10000;
 }
 
 void setup() {
   fridge_controller_setup();
+
+  // espota.py's --timeout option only controls the initial invitation. The
+  // ArduinoOTA receiver has its own much shorter inter-packet timeout; increase
+  // it so a brief Wi-Fi pause while flash is being written does not abort an
+  // otherwise healthy transfer.
+  ArduinoOTA.setTimeout(kOtaReceiveTimeoutMs);
 
   // The existing implementation has already called ArduinoOTA.begin().
   // Registering the callbacks here is valid and avoids disturbing the proven
@@ -44,18 +52,28 @@ void setup() {
   // last commanded state for the short update window.
   ArduinoOTA.onStart([]() {
     ota_in_progress = true;
-    ESP_LOGW("OTA", "OTA exclusive mode started");
+
+    // Disable ESP32 modem power saving only for the firmware transfer. This
+    // improves packet latency/reliability without increasing normal operating
+    // power consumption between OTA updates.
+    WiFi.setSleep(false);
+
+    ESP_LOGW("OTA", "OTA exclusive mode started (receive timeout %d ms)",
+             kOtaReceiveTimeoutMs);
   });
 
   ArduinoOTA.onEnd([]() {
     ESP_LOGW("OTA", "OTA transfer complete");
     ota_in_progress = false;
+    // Successful firmware OTA normally reboots immediately after this callback,
+    // so there is no need to restore modem sleep here.
   });
 
   ArduinoOTA.onError([](ota_error_t error) {
     ESP_LOGE("OTA", "OTA failed with error %u; resuming normal services",
              static_cast<unsigned>(error));
     ota_in_progress = false;
+    WiFi.setSleep(true);
   });
 }
 
