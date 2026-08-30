@@ -220,7 +220,13 @@ At boot the splash screen remains visible for approximately **15 seconds** and b
 
 ### 4. Configure Wi-Fi and optional integrations
 
-Use the SensESP web configuration interface to configure Wi-Fi.
+Use the SensESP web configuration interface to configure Wi-Fi. On a new/unconfigured controller, connect to the controller's temporary setup access point:
+
+- Wi-Fi AP / SSID: `fridge-controller`
+- Default AP password: `thisisfine`
+- Configuration page: `http://192.168.4.1`
+
+These credentials are for the temporary SensESP configuration access point used to configure the controller's normal Wi-Fi connection.
 
 - Signal K is optional.
 - Cerbo GX MQTT is optional and independent of Signal K.
