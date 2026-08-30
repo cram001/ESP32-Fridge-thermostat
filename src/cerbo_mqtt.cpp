@@ -43,6 +43,21 @@ void CerboMqttPublisher::configure(const char* host, uint16_t port,
   publish_due_ = enabled();
 }
 
+void CerboMqttPublisher::suspend() {
+  suspended_ = true;
+  if (mqtt_.connected()) mqtt_.disconnect();
+  network_client_.stop();
+}
+
+void CerboMqttPublisher::resume(uint32_t now) {
+  suspended_ = false;
+  reconnect_delay_ms_ = kReconnectMinMs;
+  // Permit the next service() call to reconnect immediately without relying on
+  // zero as a special timestamp (which becomes ambiguous after millis rollover).
+  last_reconnect_attempt_ms_ = now - kReconnectMinMs;
+  publish_due_ = enabled();
+}
+
 void CerboMqttPublisher::build_client_id() {
   const uint64_t chip_id = ESP.getEfuseMac();
   snprintf(client_id_, sizeof(client_id_), "fridge-%04X%08X",
@@ -51,7 +66,10 @@ void CerboMqttPublisher::build_client_id() {
 }
 
 void CerboMqttPublisher::reconnect(uint32_t now) {
-  if (!enabled() || host_[0] == '\0' || WiFi.status() != WL_CONNECTED) return;
+  if (suspended_ || !enabled() || host_[0] == '\0' ||
+      WiFi.status() != WL_CONNECTED) {
+    return;
+  }
   if (mqtt_.connected()) return;
 
   if (last_reconnect_attempt_ms_ != 0 &&
@@ -95,6 +113,8 @@ bool CerboMqttPublisher::publish_temperature(const char* topic, float value) {
 
 void CerboMqttPublisher::service(uint32_t now, float fridge_c, float freezer_c,
                                  float ambient_c) {
+  if (suspended_) return;
+
   if (!enabled()) {
     if (mqtt_.connected()) mqtt_.disconnect();
     return;
