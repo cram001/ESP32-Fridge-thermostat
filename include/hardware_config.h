@@ -97,6 +97,11 @@ constexpr uint16_t kFanDelayMaxS = 180;
 constexpr uint16_t kFanDelayStepS = 5;
 constexpr uint8_t kFanMinimumOnMin = 1;
 constexpr uint8_t kFanMinimumOnMax = 5;
+constexpr uint8_t kCirculationMixIntervalOptions[] = {0, 6, 10, 15, 20, 30, 45, 60};
+constexpr uint8_t kCirculationMixIntervalOptionCount =
+    sizeof(kCirculationMixIntervalOptions) /
+    sizeof(kCirculationMixIntervalOptions[0]);
+constexpr uint8_t kCirculationMixRunMin = 3;
 constexpr uint8_t kOledContrastOptions[] = {
     5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
 constexpr uint8_t kOledContrastOptionCount =

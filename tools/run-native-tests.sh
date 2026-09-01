@@ -20,6 +20,7 @@ compile_and_run() {
 }
 
 compile_and_run controller_tests.cpp controller-tests
+compile_and_run circulation_mix_tests.cpp circulation-mix-tests
 compile_and_run failure_mode_tests.cpp failure-mode-tests
 compile_and_run sensor_health_tests.cpp sensor-health-tests
 compile_and_run cerbo_mqtt_interval_tests.cpp cerbo-mqtt-interval-tests
