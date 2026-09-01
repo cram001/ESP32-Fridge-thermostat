@@ -3,14 +3,20 @@
 #include "cerbo_mqtt_interval.h"
 
 namespace {
-constexpr uint8_t kSettingCount = 25;
-constexpr uint8_t kLayoutSetting = 17;
-constexpr uint8_t kCerboMqttSetting = 18;
-constexpr uint8_t kFanOverrideSetting = 19;
-constexpr uint8_t kOutputTestSetting = 20;
-constexpr uint8_t kFirstAssignmentSetting = 21;
-constexpr uint8_t kLastAssignmentSetting = 23;
-constexpr uint8_t kAboutSetting = 24;
+constexpr uint8_t kSettingCount = 26;
+constexpr uint8_t kCirculationMixSetting = 12;
+constexpr uint8_t kGetHomeSetting = 13;
+constexpr uint8_t kBuzzerSetting = 14;
+constexpr uint8_t kErrorsSetting = 15;
+constexpr uint8_t kOledContrastSetting = 16;
+constexpr uint8_t kDisplayTimeoutSetting = 17;
+constexpr uint8_t kLayoutSetting = 18;
+constexpr uint8_t kCerboMqttSetting = 19;
+constexpr uint8_t kFanOverrideSetting = 20;
+constexpr uint8_t kOutputTestSetting = 21;
+constexpr uint8_t kFirstAssignmentSetting = 22;
+constexpr uint8_t kLastAssignmentSetting = 24;
+constexpr uint8_t kAboutSetting = 25;
 }
 
 FridgeDisplay::FridgeDisplay(uint8_t cs, uint8_t dc, uint8_t reset,
@@ -428,7 +434,15 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
     t.name = "Circ min ON";
     snprintf(t.value, sizeof(t.value), "%um",
              model.settings->circulation_min_on_min);
-  } else if (model.selected_setting == 12) {
+  } else if (model.selected_setting == kCirculationMixSetting) {
+    t.name = "Circ mix interval";
+    if (model.settings->circulation_mix_interval_min == 0) {
+      snprintf(t.value, sizeof(t.value), "OFF");
+    } else {
+      snprintf(t.value, sizeof(t.value), "%um",
+               model.settings->circulation_mix_interval_min);
+    }
+  } else if (model.selected_setting == kGetHomeSetting) {
     t.name = "Get-me-home fan";
     if (model.settings->emergency_spillover_on_min == 0) {
       snprintf(t.value, sizeof(t.value), "OFF");
@@ -436,7 +450,7 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
       snprintf(t.value, sizeof(t.value), "%um/hour",
                model.settings->emergency_spillover_on_min);
     }
-  } else if (model.selected_setting == 13) {
+  } else if (model.selected_setting == kBuzzerSetting) {
     static const char* buzzer_names[] = {"OFF", "STEADY", "DOUBLE", "HI-LO",
                                          "TRIPLE"};
     const uint8_t mode = model.settings->buzzer_mode < hw::kBuzzerModeCount
@@ -444,11 +458,11 @@ FridgeDisplay::SettingText FridgeDisplay::build_setting_text(
                              : hw::kDefaultBuzzerMode;
     t.name = "Buzzer";
     snprintf(t.value, sizeof(t.value), "%s", buzzer_names[mode]);
-  } else if (model.selected_setting == 15) {
+  } else if (model.selected_setting == kOledContrastSetting) {
     t.name = "OLED contrast";
     snprintf(t.value, sizeof(t.value), "%u%%",
              model.settings->oled_contrast_percent);
-  } else if (model.selected_setting == 16) {
+  } else if (model.selected_setting == kDisplayTimeoutSetting) {
     t.name = "Display off";
     if (model.settings->display_timeout_min == 0) {
       snprintf(t.value, sizeof(t.value), "Never");
@@ -551,7 +565,7 @@ void FridgeDisplay::draw(const DisplayModel& model) {
   oled_.clearBuffer();
 
   const bool showing_errors =
-      model.selected_setting == 14 &&
+      model.selected_setting == kErrorsSetting &&
       (model.menu_active || model.fault_count > 0);
 
   if (model.assignment_mode) {
