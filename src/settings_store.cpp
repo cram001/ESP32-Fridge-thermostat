@@ -51,7 +51,10 @@ bool LoadedControllerSettingsValid(const ControllerSettings& settings) {
       settings.circulation_min_on_min > hw::kFanMinimumOnMax) {
     return false;
   }
-  if (!IsAllowedSettingOption(settings.emergency_spillover_on_min,
+  if (!IsAllowedSettingOption(settings.circulation_mix_interval_min,
+                              hw::kCirculationMixIntervalOptions,
+                              hw::kCirculationMixIntervalOptionCount) ||
+      !IsAllowedSettingOption(settings.emergency_spillover_on_min,
                               hw::kEmergencySpilloverOptions,
                               hw::kEmergencySpilloverOptionCount) ||
       settings.buzzer_mode >= hw::kBuzzerModeCount ||
@@ -98,6 +101,8 @@ bool SettingsStore::to_json(JsonObject& root) {
   root["fan_delay_s"] = settings_.fan_delay_s;
   root["spillover_min_on_min"] = settings_.spillover_min_on_min;
   root["circulation_min_on_min"] = settings_.circulation_min_on_min;
+  root["circulation_mix_interval_min"] =
+      settings_.circulation_mix_interval_min;
   root["emergency_spillover_on_min"] =
       settings_.emergency_spillover_on_min;
   root["fan_override_all_off"] = settings_.fan_override_all_off;
@@ -130,6 +135,9 @@ bool SettingsStore::from_json(const JsonObject& root) {
       root["spillover_min_on_min"] | settings_.spillover_min_on_min;
   settings_.circulation_min_on_min =
       root["circulation_min_on_min"] | settings_.circulation_min_on_min;
+  settings_.circulation_mix_interval_min =
+      root["circulation_mix_interval_min"] |
+      settings_.circulation_mix_interval_min;
   settings_.emergency_spillover_on_min =
       root["emergency_spillover_on_min"] |
       settings_.emergency_spillover_on_min;
@@ -217,8 +225,9 @@ const String ConfigSchema(const SettingsStore&) {
       "fan_delay_s":{"title":"Fan trigger delay (seconds)","type":"integer","minimum":%FAN_DELAY_MIN_S%,"maximum":%FAN_DELAY_MAX_S%,"multipleOf":%FAN_DELAY_STEP_S%},
       "spillover_min_on_min":{"title":"Spillover minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
       "circulation_min_on_min":{"title":"Circulation minimum ON (minutes)","type":"integer","minimum":%FAN_ON_MIN%,"maximum":%FAN_ON_MAX%},
+      "circulation_mix_interval_min":{"title":"Circulation mix interval","description":"When otherwise idle, run only the circulation fan for 3 minutes after this many minutes without circulation. 0 = OFF.","type":"integer","enum":%CIRC_MIX_OPTIONS%},
       "emergency_spillover_on_min":{"title":"Get-me-home spillover fan (minutes ON per hour; 0 = OFF)","type":"integer","enum":%EMERGENCY_OPTIONS%},
-      "fan_override_all_off":{"title":"Override Fans - All fans off","description":"Persistent freezer-only mode. When enabled, both fan outputs are forced OFF and cannot be energized by normal control, GET-HOME, startup fan test, or output test.","type":"boolean"},
+      "fan_override_all_off":{"title":"Override Fans - All fans off","description":"Persistent freezer-only mode. When enabled, both fan outputs are forced OFF and cannot be energized by normal control, GET-HOME, startup fan test, output test, or periodic mixing.","type":"boolean"},
       "buzzer_mode":{"title":"Buzzer","description":"Alarm sound; OFF disables audible alarms.","type":"integer","oneOf":[{"const":0,"title":"OFF"},{"const":1,"title":"STEADY"},{"const":2,"title":"DOUBLE"},{"const":3,"title":"HI-LO"},{"const":4,"title":"TRIPLE"}]},
       "oled_contrast_percent":{"title":"OLED contrast (%)","type":"integer","enum":%CONTRAST_OPTIONS%},
       "display_timeout_min":{"title":"Display auto-off (minutes, 0 = disabled)","type":"integer","enum":%DISPLAY_TIMEOUT_OPTIONS%},
@@ -258,6 +267,10 @@ const String ConfigSchema(const SettingsStore&) {
   schema.replace("%CALIBRATION_MIN_C%",
                  String(-hw::kCalibrationLimitC, 1));
   schema.replace("%CALIBRATION_MAX_C%", String(hw::kCalibrationLimitC, 1));
+  schema.replace(
+      "%CIRC_MIX_OPTIONS%",
+      JsonNumberArray(hw::kCirculationMixIntervalOptions,
+                      hw::kCirculationMixIntervalOptionCount));
   schema.replace(
       "%EMERGENCY_OPTIONS%",
       JsonNumberArray(hw::kEmergencySpilloverOptions,
