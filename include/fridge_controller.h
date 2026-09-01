@@ -16,12 +16,16 @@ struct ControllerSettings {
   uint16_t fan_delay_s = 15;
   uint8_t spillover_min_on_min = 2;
   uint8_t circulation_min_on_min = 2;
+  // Periodic refrigerator air mixing independent of thermostat demand.
+  // Zero disables periodic mixing. Non-zero values are minutes of circulation
+  // fan idle time before a fixed three-minute mixing run begins.
+  uint8_t circulation_mix_interval_min = 0;
   // Explicit get-me-home mode used only when the fridge probe has failed.
   // Zero keeps the spillover fan off; non-zero values are minutes ON per hour.
   uint8_t emergency_spillover_on_min = 0;
   // Persistent operator override for freezer-only operation. When true, both
   // fans remain physically off regardless of thermostat, GET-HOME, lockout,
-  // startup fan test, or output-test requests.
+  // startup fan test, output-test requests, or periodic circulation mixing.
   bool fan_override_all_off = false;
   // 0 OFF, 1 STEADY, 2 DOUBLE, 3 HI-LO, 4 TRIPLE.
   uint8_t buzzer_mode = hw::kDefaultBuzzerMode;
@@ -80,6 +84,13 @@ inline void NormalizeControllerSettings(ControllerSettings& settings) {
       constrain(settings.circulation_min_on_min, hw::kFanMinimumOnMin,
                 hw::kFanMinimumOnMax);
 
+  if (!IsAllowedSettingOption(
+          settings.circulation_mix_interval_min,
+          hw::kCirculationMixIntervalOptions,
+          hw::kCirculationMixIntervalOptionCount)) {
+    settings.circulation_mix_interval_min =
+        defaults.circulation_mix_interval_min;
+  }
   if (!IsAllowedSettingOption(
           settings.emergency_spillover_on_min,
           hw::kEmergencySpilloverOptions,
@@ -142,6 +153,8 @@ class FridgeController {
       output_.circulation = false;
       spillover_pending_ = false;
       circulation_pending_ = false;
+      periodic_mix_active_ = false;
+      circulation_idle_since_ = 0;
       spillover_started_at_ = 0;
       circulation_started_at_ = 0;
       return output_;
@@ -176,10 +189,21 @@ class FridgeController {
     if (!fridge_valid) {
       output_.circulation = false;
       circulation_pending_ = false;
+      periodic_mix_active_ = false;
+      circulation_idle_since_ = 0;
     } else {
       const bool cold_mix_requested = fridge_c <= settings.low_c;
       const bool circulation_requested =
           output_.spillover || cold_mix_requested;
+
+      if (circulation_requested) {
+        // Any thermostat-driven circulation satisfies the periodic mixing need.
+        // If a periodic run was already active, simply hand ownership to normal
+        // control without cycling the fan off and back on.
+        periodic_mix_active_ = false;
+        circulation_idle_since_ = 0;
+      }
+
       if (!output_.circulation && output_.spillover) {
         // Circulation follows spillover immediately so incoming freezer air is
         // mixed throughout the fridge compartment.
@@ -197,14 +221,47 @@ class FridgeController {
           circulation_started_at_ = now;
           circulation_pending_ = false;
         }
-      } else if (output_.circulation && !circulation_requested &&
-                 now - circulation_started_at_ >=
-                     static_cast<uint32_t>(
-                         settings.circulation_min_on_min) *
-                         60UL * 1000UL) {
-        output_.circulation = false;
+      } else if (output_.circulation && !circulation_requested) {
+        if (periodic_mix_active_) {
+          const uint32_t periodic_run_ms =
+              static_cast<uint32_t>(hw::kCirculationMixRunMin) *
+              60UL * 1000UL;
+          if (now - circulation_started_at_ >= periodic_run_ms) {
+            output_.circulation = false;
+            periodic_mix_active_ = false;
+            circulation_idle_since_ = now;
+          }
+        } else if (now - circulation_started_at_ >=
+                   static_cast<uint32_t>(settings.circulation_min_on_min) *
+                       60UL * 1000UL) {
+          output_.circulation = false;
+          circulation_idle_since_ = now;
+        }
       } else if (!output_.circulation && fresh_sample) {
         circulation_pending_ = false;
+      }
+
+      // Periodic mixing is intentionally independent of the temperature
+      // thresholds. It runs only the circulation fan and never the spillover
+      // fan. Timing begins when circulation becomes idle; any normal circulation
+      // run resets this idle timer.
+      if (!output_.circulation && !circulation_requested) {
+        if (settings.circulation_mix_interval_min == 0) {
+          periodic_mix_active_ = false;
+          circulation_idle_since_ = 0;
+        } else {
+          if (circulation_idle_since_ == 0) circulation_idle_since_ = now;
+          const uint32_t interval_ms =
+              static_cast<uint32_t>(settings.circulation_mix_interval_min) *
+              60UL * 1000UL;
+          if (now - circulation_idle_since_ >= interval_ms) {
+            output_.circulation = true;
+            circulation_started_at_ = now;
+            circulation_idle_since_ = 0;
+            periodic_mix_active_ = true;
+            circulation_pending_ = false;
+          }
+        }
       }
     }
     return output_;
@@ -217,8 +274,10 @@ class FridgeController {
   ControllerOutput output_;
   bool spillover_pending_ = false;
   bool circulation_pending_ = false;
+  bool periodic_mix_active_ = false;
   uint32_t spillover_pending_since_ = 0;
   uint32_t circulation_pending_since_ = 0;
+  uint32_t circulation_idle_since_ = 0;
   uint32_t spillover_started_at_ = 0;
   uint32_t circulation_started_at_ = 0;
 };
