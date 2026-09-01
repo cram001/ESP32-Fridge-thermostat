@@ -85,14 +85,20 @@ uint32_t last_menu_activity_ms = 0;
 constexpr uint32_t kMenuActivityTimeoutMs = 10UL * 1000UL;
 constexpr uint32_t kSavedMessageDurationMs = 750;
 constexpr uint32_t kOutputTestDurationMs = 5UL * 1000UL;
-constexpr uint8_t kSettingCount = 25;
-constexpr uint8_t kLayoutSetting = 17;
-constexpr uint8_t kCerboMqttSetting = 18;
-constexpr uint8_t kFanOverrideSetting = 19;
-constexpr uint8_t kOutputTestSetting = 20;
-constexpr uint8_t kFirstAssignmentSetting = 21;
-constexpr uint8_t kLastAssignmentSetting = 23;
-constexpr uint8_t kAboutSetting = 24;
+constexpr uint8_t kSettingCount = 26;
+constexpr uint8_t kCirculationMixSetting = 12;
+constexpr uint8_t kGetHomeSetting = 13;
+constexpr uint8_t kBuzzerSetting = 14;
+constexpr uint8_t kErrorsSetting = 15;
+constexpr uint8_t kOledContrastSetting = 16;
+constexpr uint8_t kDisplayTimeoutSetting = 17;
+constexpr uint8_t kLayoutSetting = 18;
+constexpr uint8_t kCerboMqttSetting = 19;
+constexpr uint8_t kFanOverrideSetting = 20;
+constexpr uint8_t kOutputTestSetting = 21;
+constexpr uint8_t kFirstAssignmentSetting = 22;
+constexpr uint8_t kLastAssignmentSetting = 24;
+constexpr uint8_t kAboutSetting = 25;
 constexpr uint8_t kOutputTestOptionCount = 4;
 constexpr uint8_t kOutputTestSpillover = 0;
 constexpr uint8_t kOutputTestCirculation = 1;
@@ -702,7 +708,8 @@ void update_encoder() {
         }
         set_encoder_navigation_mode();
       } else {
-        if (selected_setting != 14 && selected_setting != kAboutSetting) {
+        if (selected_setting != kErrorsSetting &&
+            selected_setting != kAboutSetting) {
           capture_edit_snapshot();
         }
         menu_editing = true;
@@ -785,7 +792,20 @@ void update_encoder() {
           static_cast<int>(hw::kFanMinimumOnMin),
           static_cast<int>(hw::kFanMinimumOnMax));
       setting_changed = true;
-    } else if (selected_setting == 12) {
+    } else if (selected_setting == kCirculationMixSetting) {
+      uint8_t option = option_index(hw::kCirculationMixIntervalOptions,
+                                    hw::kCirculationMixIntervalOptionCount,
+                                    settings.circulation_mix_interval_min);
+      int32_t next_option =
+          (static_cast<int32_t>(option) + delta) %
+          hw::kCirculationMixIntervalOptionCount;
+      if (next_option < 0) {
+        next_option += hw::kCirculationMixIntervalOptionCount;
+      }
+      settings.circulation_mix_interval_min =
+          hw::kCirculationMixIntervalOptions[next_option];
+      setting_changed = true;
+    } else if (selected_setting == kGetHomeSetting) {
       uint8_t option = 0;
       while (option < hw::kEmergencySpilloverOptionCount - 1 &&
              hw::kEmergencySpilloverOptions[option] !=
@@ -799,7 +819,7 @@ void update_encoder() {
       settings.emergency_spillover_on_min =
           hw::kEmergencySpilloverOptions[next_option];
       setting_changed = true;
-    } else if (selected_setting == 13) {
+    } else if (selected_setting == kBuzzerSetting) {
       int32_t next_mode =
           (static_cast<int32_t>(settings.buzzer_mode) + delta) %
           hw::kBuzzerModeCount;
@@ -807,9 +827,9 @@ void update_encoder() {
       settings.buzzer_mode = static_cast<uint8_t>(next_mode);
       buzzer.preview(settings.buzzer_mode, now);
       setting_changed = true;
-    } else if (selected_setting == 14 && faults.count() > 0) {
+    } else if (selected_setting == kErrorsSetting && faults.count() > 0) {
       selected_error = wrapped_index(selected_error, delta, faults.count());
-    } else if (selected_setting == 15) {
+    } else if (selected_setting == kOledContrastSetting) {
       uint8_t option = 0;
       while (option < hw::kOledContrastOptionCount - 1 &&
              hw::kOledContrastOptions[option] !=
@@ -824,7 +844,7 @@ void update_encoder() {
           hw::kOledContrastOptions[next_option];
       display.set_contrast(settings.oled_contrast_percent);
       setting_changed = true;
-    } else if (selected_setting == 16) {
+    } else if (selected_setting == kDisplayTimeoutSetting) {
       uint8_t option = 0;
       while (option < hw::kDisplayTimeoutOptionCount - 1 &&
              hw::kDisplayTimeoutOptions[option] !=
@@ -865,7 +885,8 @@ void update_encoder() {
   }
 
   if (button_down) {
-    if (selected_setting != 14 && selected_setting != kAboutSetting) {
+    if (selected_setting != kErrorsSetting &&
+        selected_setting != kAboutSetting) {
       // Avoid unnecessary filesystem writes if edit was entered/exited without
       // changing anything, while keeping the user-facing commit confirmation.
       if (edit_changed) {
