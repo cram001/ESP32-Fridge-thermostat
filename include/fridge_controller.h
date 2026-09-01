@@ -154,7 +154,7 @@ class FridgeController {
       spillover_pending_ = false;
       circulation_pending_ = false;
       periodic_mix_active_ = false;
-      circulation_idle_since_ = 0;
+      circulation_idle_tracking_ = false;
       spillover_started_at_ = 0;
       circulation_started_at_ = 0;
       return output_;
@@ -190,7 +190,7 @@ class FridgeController {
       output_.circulation = false;
       circulation_pending_ = false;
       periodic_mix_active_ = false;
-      circulation_idle_since_ = 0;
+      circulation_idle_tracking_ = false;
     } else {
       const bool cold_mix_requested = fridge_c <= settings.low_c;
       const bool circulation_requested =
@@ -201,7 +201,7 @@ class FridgeController {
         // If a periodic run was already active, simply hand ownership to normal
         // control without cycling the fan off and back on.
         periodic_mix_active_ = false;
-        circulation_idle_since_ = 0;
+        circulation_idle_tracking_ = false;
       }
 
       if (!output_.circulation && output_.spillover) {
@@ -223,19 +223,28 @@ class FridgeController {
         }
       } else if (output_.circulation && !circulation_requested) {
         if (periodic_mix_active_) {
-          const uint32_t periodic_run_ms =
-              static_cast<uint32_t>(hw::kCirculationMixRunMin) *
-              60UL * 1000UL;
-          if (now - circulation_started_at_ >= periodic_run_ms) {
+          if (settings.circulation_mix_interval_min == 0) {
+            // Turning the feature OFF should stop a timer-owned mix immediately.
             output_.circulation = false;
             periodic_mix_active_ = false;
-            circulation_idle_since_ = now;
+            circulation_idle_tracking_ = false;
+          } else {
+            const uint32_t periodic_run_ms =
+                static_cast<uint32_t>(hw::kCirculationMixRunMin) *
+                60UL * 1000UL;
+            if (now - circulation_started_at_ >= periodic_run_ms) {
+              output_.circulation = false;
+              periodic_mix_active_ = false;
+              circulation_idle_since_ = now;
+              circulation_idle_tracking_ = true;
+            }
           }
         } else if (now - circulation_started_at_ >=
                    static_cast<uint32_t>(settings.circulation_min_on_min) *
                        60UL * 1000UL) {
           output_.circulation = false;
           circulation_idle_since_ = now;
+          circulation_idle_tracking_ = true;
         }
       } else if (!output_.circulation && fresh_sample) {
         circulation_pending_ = false;
@@ -244,20 +253,24 @@ class FridgeController {
       // Periodic mixing is intentionally independent of the temperature
       // thresholds. It runs only the circulation fan and never the spillover
       // fan. Timing begins when circulation becomes idle; any normal circulation
-      // run resets this idle timer.
+      // run resets this idle timer. A separate boolean tracks timer validity so
+      // millis()==0 and the normal millis() rollover are not special cases.
       if (!output_.circulation && !circulation_requested) {
         if (settings.circulation_mix_interval_min == 0) {
           periodic_mix_active_ = false;
-          circulation_idle_since_ = 0;
+          circulation_idle_tracking_ = false;
         } else {
-          if (circulation_idle_since_ == 0) circulation_idle_since_ = now;
+          if (!circulation_idle_tracking_) {
+            circulation_idle_since_ = now;
+            circulation_idle_tracking_ = true;
+          }
           const uint32_t interval_ms =
               static_cast<uint32_t>(settings.circulation_mix_interval_min) *
               60UL * 1000UL;
           if (now - circulation_idle_since_ >= interval_ms) {
             output_.circulation = true;
             circulation_started_at_ = now;
-            circulation_idle_since_ = 0;
+            circulation_idle_tracking_ = false;
             periodic_mix_active_ = true;
             circulation_pending_ = false;
           }
@@ -275,6 +288,7 @@ class FridgeController {
   bool spillover_pending_ = false;
   bool circulation_pending_ = false;
   bool periodic_mix_active_ = false;
+  bool circulation_idle_tracking_ = false;
   uint32_t spillover_pending_since_ = 0;
   uint32_t circulation_pending_since_ = 0;
   uint32_t circulation_idle_since_ = 0;
